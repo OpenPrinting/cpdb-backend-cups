@@ -244,6 +244,18 @@ static gboolean on_handle_get_printer_state(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_get_human_readable_option_name(PrintBackend *interface,
+                                                         GDBusMethodInvocation *invocation,
+                                                         const gchar *option_name,
+                                                         gpointer user_data)
+{
+  char *human_readable_name = get_human_readable_option_name(option_name);
+  printf("Human readable name of option %s is %s\n", option_name, human_readable_name);
+  print_backend_complete_get_human_readable_option_name(interface, invocation, human_readable_name);
+  return TRUE;
+}
+
+
 static gboolean on_handle_ping(PrintBackend *interface,
                                GDBusMethodInvocation *invocation,
                                const gchar *printer_name,
@@ -434,6 +446,10 @@ void connect_to_signals()
     g_signal_connect(skeleton,                      //instance
                      "handle-replace",              //signal name
                      G_CALLBACK(on_handle_replace), //callback
+                     NULL);
+    g_signal_connect(skeleton,                                             //instance
+                     "handle-get-human-readable-option-name",              //signal name
+                     G_CALLBACK(on_handle_get_human_readable_option_name), //callback
                      NULL);
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name

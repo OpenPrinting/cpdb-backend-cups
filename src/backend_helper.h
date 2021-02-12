@@ -187,6 +187,11 @@ int print_file(PrinterCUPS *p, const char *file_path, int num_settings, GVariant
 int get_active_jobs_count(PrinterCUPS *p);
 gboolean cancel_job(PrinterCUPS *p, int jobid);
 
+/**
+ * Get human readable names of the options and their choices.
+ */
+char *get_human_readable_option_name(const char *option_name);
+
 void tryPPD(PrinterCUPS *p);
 /**********Dialog related funtions ****************/
 Dialog *get_new_Dialog();

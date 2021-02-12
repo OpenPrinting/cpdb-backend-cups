@@ -1054,6 +1054,51 @@ void print_job(cups_job_t *j)
     printf("state : %s\n", state);
 }
 
+char *get_human_readable_option_name(const char *option_name)
+{
+    if (strcmp("page-set", option_name) == 0)
+        return get_string_copy("Page set");
+    if (strcmp("number-up", option_name) == 0)
+        return get_string_copy("Pages per side");
+    if (strcmp("print-resolution", option_name) == 0)
+        return get_string_copy("Resolution");
+    if (strcmp("print-quality", option_name) == 0)
+        return get_string_copy("Quality");
+    if (strcmp("printer-resolution", option_name) == 0)
+        return get_string_copy("Printer resolution");
+    if (strcmp("sides", option_name) == 0)
+        return get_string_copy("Two-sided");
+    if (strcmp("multiple-document-handling", option_name) == 0)
+        return get_string_copy("Collate");
+    if (strcmp("media", option_name) == 0)
+        return get_string_copy("Paper size");
+    if (strcmp("page-delivery", option_name) == 0)
+        return get_string_copy("Reverse");
+    if (strcmp("job-hold-until", option_name) == 0)
+        return get_string_copy("Print job at");
+    if (strcmp("job-priority", option_name) == 0)
+        return get_string_copy("Priority");
+    if (strcmp("job-name", option_name) == 0)
+        return get_string_copy("Job name");
+    if (strcmp("output-bin", option_name) == 0)
+        return get_string_copy("Output tray");
+    if (strcmp("page-ranges", option_name) == 0)
+        return get_string_copy("Range");
+    if (strcmp("print-color-mode", option_name) == 0)
+        return get_string_copy("Color mode");
+    if (strcmp("copies", option_name) == 0)
+        return get_string_copy("Copies");
+    if (strcmp("orientation-requested", option_name) == 0)
+        return get_string_copy("Orientation");
+    if (strcmp("job-sheets", option_name) == 0)
+        return get_string_copy("Paper type");
+    if (strcmp("finishings", option_name) == 0)
+        return get_string_copy("Finishings");
+    if (strcmp("print-scaling", option_name) == 0)
+        return get_string_copy("Page scaling");
+    return get_string_copy(option_name);
+}
+
 char *translate_job_state(ipp_jstate_t state)
 {
     switch (state)
