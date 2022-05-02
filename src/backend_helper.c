@@ -586,12 +586,28 @@ int get_all_options(PrinterCUPS *p, Option **options)
     int num_options = get_job_creation_attributes(p, &option_names); /** number of options to be returned**/
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
-    Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+1))); /**Option array, which will be filled, +1 for page-set option **/
+    Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+14))); /**Option array, which will be filled **/
     ipp_attribute_t *vals;                                               /** Variable to store the values of the options **/
 
     for (i = 0; i < num_options; i++)
     {
-        if(strcmp(option_names[i], "media-col") == 0)
+        if(
+            (strcmp(option_names[i], "booklet") == 0) ||
+            (strcmp(option_names[i], "ipp-attribute-fidelity") == 0) ||
+            (strcmp(option_names[i], "job-sheets") == 0) ||
+            (strcmp(option_names[i], "media-col") == 0) ||
+            (strcmp(option_names[i], "mirror") == 0) ||
+            (strcmp(option_names[i], "multiple-document-handling") == 0) ||
+            (strcmp(option_names[i], "number-up") == 0) ||
+            (strcmp(option_names[i], "number-up-layout") == 0) ||
+            (strcmp(option_names[i], "orientation-requested") == 0) ||
+            (strcmp(option_names[i], "page-border") == 0) ||
+            (strcmp(option_names[i], "page-delivery") == 0) ||
+            (strcmp(option_names[i], "page-set") == 0) ||
+            (strcmp(option_names[i], "position") == 0) ||
+            (strcmp(option_names[i], "print-scaling") == 0) ||
+            (strcmp(option_names[i], "print-quality") == 0)
+        )
             continue;
 
         opts[optsIndex].option_name = option_names[i];
@@ -619,17 +635,255 @@ int get_all_options(PrinterCUPS *p, Option **options)
             opts[optsIndex].default_value = get_string_copy("NA");
         }
 
+        /** For "media" option, the default value isn't listed as a supported value due to difference in naming schemes **/
+        if (strcmp(option_names[i], "media") == 0 && strcmp(opts[optsIndex].default_value, "iso_a4_210x297mm") == 0)
+        {
+            opts[optsIndex].default_value = get_string_copy("A4");
+        }
+
         optsIndex++;
     }
 
-    /* Add the page-set option */
-    opts[optsIndex].option_name = get_string_copy("page-set");
+    /* Add the booklet option */
+    opts[optsIndex].option_name = get_string_copy("booklet");
+    opts[optsIndex].num_supported = 3;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("off");
+    opts[optsIndex].supported_values[1] = get_string_copy("on");
+    opts[optsIndex].supported_values[2] = get_string_copy("shuffle-only");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the ipp-attribute-fidelity option */
+    opts[optsIndex].option_name = get_string_copy("ipp-attribute-fidelity");
     opts[optsIndex].num_supported = 2;
     opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = get_string_copy("even");
-    opts[optsIndex].supported_values[1] = get_string_copy("odd");
-    opts[optsIndex].default_value = get_string_copy("all");
+    opts[optsIndex].supported_values[0] = get_string_copy("off");
+    opts[optsIndex].supported_values[1] = get_string_copy("on");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
     optsIndex++;
+
+    /* Add the job-sheets option */
+    opts[optsIndex].option_name = get_string_copy("job-sheets");
+    opts[optsIndex].num_supported = 8;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("none");
+    opts[optsIndex].supported_values[1] = get_string_copy("classified");
+    opts[optsIndex].supported_values[2] = get_string_copy("confidential");
+    opts[optsIndex].supported_values[3] = get_string_copy("form");
+    opts[optsIndex].supported_values[4] = get_string_copy("secret");
+    opts[optsIndex].supported_values[5] = get_string_copy("standard");
+    opts[optsIndex].supported_values[6] = get_string_copy("topsecret");
+    opts[optsIndex].supported_values[7] = get_string_copy("unclassified");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = get_string_copy("none,none");
+    }
+    optsIndex++;
+
+    /* Add the mirror option */
+    opts[optsIndex].option_name = get_string_copy("mirror");
+    opts[optsIndex].num_supported = 2;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("off");
+    opts[optsIndex].supported_values[1] = get_string_copy("on");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the multiple-document-handling option */
+    opts[optsIndex].option_name = get_string_copy("multiple-document-handling");
+    opts[optsIndex].num_supported = 2;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("separate-documents-uncollated-copies");
+    opts[optsIndex].supported_values[1] = get_string_copy("separate-documents-collated-copies");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the number-up option */
+    opts[optsIndex].option_name = get_string_copy("number-up");
+    opts[optsIndex].num_supported = 6;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("1");
+    opts[optsIndex].supported_values[1] = get_string_copy("2");
+    opts[optsIndex].supported_values[2] = get_string_copy("4");
+    opts[optsIndex].supported_values[3] = get_string_copy("6");
+    opts[optsIndex].supported_values[4] = get_string_copy("9");
+    opts[optsIndex].supported_values[5] = get_string_copy("16");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the number-up-layout option */
+    opts[optsIndex].option_name = get_string_copy("number-up-layout");
+    opts[optsIndex].num_supported = 8;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("lrtb");
+    opts[optsIndex].supported_values[1] = get_string_copy("lrbt");
+    opts[optsIndex].supported_values[2] = get_string_copy("rltb");
+    opts[optsIndex].supported_values[3] = get_string_copy("rlbt");
+    opts[optsIndex].supported_values[4] = get_string_copy("tblr");
+    opts[optsIndex].supported_values[5] = get_string_copy("tbrl");
+    opts[optsIndex].supported_values[6] = get_string_copy("btlr");
+    opts[optsIndex].supported_values[7] = get_string_copy("btrl");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the orientation-requested option */
+    opts[optsIndex].option_name = get_string_copy("orientation-requested");
+    opts[optsIndex].num_supported = 4;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("3");
+    opts[optsIndex].supported_values[1] = get_string_copy("4");
+    opts[optsIndex].supported_values[2] = get_string_copy("5");
+    opts[optsIndex].supported_values[3] = get_string_copy("6");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    else
+    {
+        if (strcmp(opts[optsIndex].default_value, "potrait") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        else if (strcmp(opts[optsIndex].default_value, "landscape") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
+        else if (strcmp(opts[optsIndex].default_value, "reverse-landscape") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[2];
+        else if (strcmp(opts[optsIndex].default_value, "reverse-potrait") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[3];
+        else
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the page-border option */
+    opts[optsIndex].option_name = get_string_copy("page-border");
+    opts[optsIndex].num_supported = 5;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("none");
+    opts[optsIndex].supported_values[1] = get_string_copy("single");
+    opts[optsIndex].supported_values[2] = get_string_copy("single-thick");
+    opts[optsIndex].supported_values[3] = get_string_copy("double");
+    opts[optsIndex].supported_values[4] = get_string_copy("double-thick");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the page-delivery option */
+    opts[optsIndex].option_name = get_string_copy("page-delivery");
+    opts[optsIndex].num_supported = 2;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("same-order");
+    opts[optsIndex].supported_values[1] = get_string_copy("reverse-order");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the page-set option */
+    opts[optsIndex].option_name = get_string_copy("page-set");
+    opts[optsIndex].num_supported = 3;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("all");
+    opts[optsIndex].supported_values[1] = get_string_copy("even");
+    opts[optsIndex].supported_values[2] = get_string_copy("odd");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the position option */
+    opts[optsIndex].option_name = get_string_copy("position");
+    opts[optsIndex].num_supported = 9;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("center");
+    opts[optsIndex].supported_values[1] = get_string_copy("top");
+    opts[optsIndex].supported_values[2] = get_string_copy("bottom");
+    opts[optsIndex].supported_values[3] = get_string_copy("left");
+    opts[optsIndex].supported_values[4] = get_string_copy("right");
+    opts[optsIndex].supported_values[5] = get_string_copy("top-left");
+    opts[optsIndex].supported_values[6] = get_string_copy("top-right");
+    opts[optsIndex].supported_values[7] = get_string_copy("bottom-left");
+    opts[optsIndex].supported_values[8] = get_string_copy("bottom-right");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the print-scaling option */
+    opts[optsIndex].option_name = get_string_copy("print-scaling");
+    opts[optsIndex].num_supported = 5;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("auto");
+    opts[optsIndex].supported_values[1] = get_string_copy("auto-fit");
+    opts[optsIndex].supported_values[2] = get_string_copy("fill");
+    opts[optsIndex].supported_values[3] = get_string_copy("fit");
+    opts[optsIndex].supported_values[4] = get_string_copy("none");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+    }
+    optsIndex++;
+
+    /* Add the print-quality option */
+    opts[optsIndex].option_name = get_string_copy("print-quality");
+    opts[optsIndex].num_supported = 3;
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    opts[optsIndex].supported_values[0] = get_string_copy("3");
+    opts[optsIndex].supported_values[1] = get_string_copy("4");
+    opts[optsIndex].supported_values[2] = get_string_copy("5");
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
+    }
+    else
+    {
+        if (strcasecmp(opts[optsIndex].default_value, "draft") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        else if (strcasecmp(opts[optsIndex].default_value, "normal") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
+        else if (strcasecmp(opts[optsIndex].default_value, "high") == 0)
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[2];
+        else
+            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
+    }
+    optsIndex++;
+
 
     *options = (Option *) realloc(opts, sizeof(Option) * optsIndex);
     return optsIndex;
