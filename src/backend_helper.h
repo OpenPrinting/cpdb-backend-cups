@@ -188,9 +188,14 @@ int get_active_jobs_count(PrinterCUPS *p);
 gboolean cancel_job(PrinterCUPS *p, int jobid);
 
 /**
- * Get human readable names of the options and their choices.
+ * Get human readable names of the options.
  */
 char *get_human_readable_option_name(const char *option_name);
+
+/**
+ * Get human readable names of choices of the options.
+ */
+char *get_human_readable_choice_name(const char *option_name, const char *choice_name);
 
 void tryPPD(PrinterCUPS *p);
 /**********Dialog related funtions ****************/

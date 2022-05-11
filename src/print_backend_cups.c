@@ -255,6 +255,18 @@ static gboolean on_handle_get_human_readable_option_name(PrintBackend *interface
   return TRUE;
 }
 
+static gboolean on_handle_get_human_readable_choice_name(PrintBackend *interface,
+                                                         GDBusMethodInvocation *invocation,
+                                                         const gchar *option_name,
+                                                         const gchar *choice_name,
+                                                         gpointer user_data)
+{
+    char *human_readable_name = get_human_readable_choice_name(option_name, choice_name);
+    printf("Human readable name of choice %s for option %s is %s", choice_name, option_name, human_readable_name);
+    print_backend_complete_get_human_readable_choice_name(interface, invocation, human_readable_name);
+    return TRUE;
+}
+
 
 static gboolean on_handle_ping(PrintBackend *interface,
                                GDBusMethodInvocation *invocation,
@@ -451,6 +463,10 @@ void connect_to_signals()
                      "handle-get-human-readable-option-name",              //signal name
                      G_CALLBACK(on_handle_get_human_readable_option_name), //callback
                      NULL);
+    g_signal_connect(skeleton,
+                     "handle-get-human-readable-choice-name",              //instance
+                     G_CALLBACK(on_handle_get_human_readable_choice_name), // signal name
+                     NULL);                                                // callback
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface

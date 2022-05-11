@@ -635,12 +635,6 @@ int get_all_options(PrinterCUPS *p, Option **options)
             opts[optsIndex].default_value = get_string_copy("NA");
         }
 
-        /** For "media" option, the default value isn't listed as a supported value due to difference in naming schemes **/
-        if (strcmp(option_names[i], "media") == 0 && strcmp(opts[optsIndex].default_value, "iso_a4_210x297mm") == 0)
-        {
-            opts[optsIndex].default_value = get_string_copy("A4");
-        }
-
         optsIndex++;
     }
 
@@ -1312,8 +1306,12 @@ char *get_human_readable_option_name(const char *option_name)
 {
     if (strcmp("page-set", option_name) == 0)
         return get_string_copy("Page set");
+    if (strcmp("position", option_name) == 0)
+        return get_string_copy("Position");
     if (strcmp("number-up", option_name) == 0)
         return get_string_copy("Pages per side");
+    if (strcmp("number-up-layout", option_name) == 0)
+        return get_string_copy("Multiple Page layout");
     if (strcmp("print-resolution", option_name) == 0)
         return get_string_copy("Resolution");
     if (strcmp("print-quality", option_name) == 0)
@@ -1328,6 +1326,8 @@ char *get_human_readable_option_name(const char *option_name)
         return get_string_copy("Paper size");
     if (strcmp("page-delivery", option_name) == 0)
         return get_string_copy("Reverse");
+    if (strcmp("page-border", option_name) == 0)
+        return get_string_copy("Page border");
     if (strcmp("job-hold-until", option_name) == 0)
         return get_string_copy("Print job at");
     if (strcmp("job-priority", option_name) == 0)
@@ -1350,7 +1350,231 @@ char *get_human_readable_option_name(const char *option_name)
         return get_string_copy("Finishings");
     if (strcmp("print-scaling", option_name) == 0)
         return get_string_copy("Page scaling");
+    if (strcmp("booklet", option_name) == 0)
+        return get_string_copy("Booklet");
+    if (strcmp("mirror", option_name) == 0)
+        return get_string_copy("Mirror");
     return get_string_copy(option_name);
+}
+
+char *get_human_readable_choice_name(const char *option_name, const char *choice_name)
+{
+    if (strcmp("page-set", option_name) == 0)
+    {
+        if (strcmp("all", choice_name) == 0)
+            return get_string_copy("All pages");
+        if (strcmp("odd", choice_name) == 0)
+            return get_string_copy("Odd pages");
+        if (strcmp("even", choice_name) == 0)
+            return get_string_copy("Even pages");
+    }
+    if (strcmp("position", option_name) == 0)
+    {
+        if (strcmp("center", choice_name) == 0)
+            return get_string_copy("Center");
+        if (strcmp("top", choice_name) == 0)
+            return get_string_copy("Top");
+        if (strcmp("bottom", choice_name) == 0)
+            return get_string_copy("Bottom");
+        if (strcmp("left", choice_name) == 0)
+            return get_string_copy("Left");
+        if (strcmp("right", choice_name) == 0)
+            return get_string_copy("Right");
+        if (strcmp("top-left", choice_name) == 0)
+            return get_string_copy("Top Left");
+        if (strcmp("top-right", choice_name) == 0)
+            return get_string_copy("Top Right");
+        if (strcmp("bottom-left", choice_name) == 0)
+            return get_string_copy("Bottom Left");
+        if (strcmp("bottom-right", choice_name) == 0)
+            return get_string_copy("Bottom Right");
+    }
+    if (strcmp("number-up-layout", option_name) == 0)
+    {
+        if (strcmp("lrtb", choice_name) == 0)
+            return get_string_copy("Left to Right, Top to Bottom");
+        if (strcmp("lrbt", choice_name) == 0)
+
+            return get_string_copy("Left to Right, Bottom to Top");
+        if (strcmp("rltb", choice_name) == 0)
+            return get_string_copy("Right to Left, Top to Bottom");  
+        if (strcmp("rlbt", choice_name) == 0)
+            return get_string_copy("Right to Left, Bottom to Top"); 
+        if (strcmp("tblr", choice_name) == 0)
+            return get_string_copy("Top to Bottom, Left to Right");
+        if (strcmp("tbrl", choice_name) == 0)
+            return get_string_copy("Top to Bottom, Right to Left");
+        if (strcmp("btlr", choice_name) == 0)
+            return get_string_copy("Bottom to Top, Left to Right");  
+        if (strcmp("btrl", choice_name) == 0)
+            return get_string_copy("Bottom to Top, Right to Left"); 
+    }
+    if (strcmp("print-quality", option_name) == 0)
+    {
+        if (strcmp("3", choice_name) == 0)
+            return get_string_copy("Draft");
+        if (strcmp("4", choice_name) == 0)
+            return get_string_copy("Normal");
+        if (strcmp("5", choice_name) == 0)
+            return get_string_copy("High");
+    }
+    if (strcmp("sides", option_name) == 0)
+    {
+        if (strcmp("one-sided", choice_name) == 0)
+            return get_string_copy("False");
+        if (strcmp("two-sided-short-edge", choice_name) == 0)
+            return get_string_copy("True, Landscape");
+        if (strcmp("two-sided-long-edge", choice_name) == 0)
+            return get_string_copy("True, Potrait");
+    }
+    if (strcmp("multiple-document-handling", option_name) == 0)
+    {
+        
+        if (strcmp("separate-documents-uncollated-copies", choice_name) == 0)
+            return get_string_copy("False");
+        if (strcmp("separate-documents-collated-copies", choice_name) == 0)
+            return get_string_copy("True");
+    }
+    if (strcmp("media", option_name) == 0)
+    {
+        pwg_media_t *pwg_media;
+        
+        pwg_media = pwgMediaForPWG(choice_name);
+        if (pwg_media != NULL)
+            return get_string_copy(pwg_media->ppd);
+    }
+    if (strcmp("page-delivery", option_name) == 0)
+    {
+        if (strcmp("same-order", choice_name) == 0)
+            return get_string_copy("False");
+        if (strcmp("reverse-order", choice_name) == 0)
+            return get_string_copy("True");
+    }
+    if (strcmp("page-border", option_name) == 0)
+    {
+        if (strcmp("none", choice_name) == 0)
+            return get_string_copy("None");
+        if (strcmp("single", choice_name) == 0)
+            return get_string_copy("Single");
+        if (strcmp("single-thick", choice_name) == 0)
+            return get_string_copy("Single Thick");
+        if (strcmp("double", choice_name) == 0)
+            return get_string_copy("Double");
+        if (strcmp("double", choice_name) == 0)
+            return get_string_copy("Double Thick");
+    }
+    if (strcmp("job-hold-until", option_name) == 0)
+    {
+        if (strcmp("no-hold", choice_name) == 0)
+            return get_string_copy("No hold");
+        if (strcmp("indefinite", choice_name) == 0)
+            return get_string_copy("Indefinite");
+        if (strcmp("day-time", choice_name) == 0)
+            return get_string_copy("Day time");
+        if (strcmp("evening", choice_name) == 0)
+            return get_string_copy("Evening");
+        if (strcmp("night", choice_name) == 0)
+            return get_string_copy("Night");
+        if (strcmp("second-shift", choice_name) == 0)
+            return get_string_copy("Second shift");
+        if (strcmp("third-shift", choice_name) == 0)
+            return get_string_copy("Third shift");
+        if (strcmp("weekend", choice_name) == 0)
+            return get_string_copy("Weekend");
+    }
+    if (strcmp("job-priority", option_name) == 0)
+    {
+        int val = atoi(choice_name);
+
+        if (val <= 30)
+            return get_string_copy("Low");
+        if (val <= 50)
+            return get_string_copy("Medium");
+        if (val <= 80)
+            return get_string_copy("High");
+        if (val <= 100)
+            return get_string_copy("Urgent");
+    }
+    if (strcmp("output-bin", option_name) == 0)
+    {
+        if (strcmp("face-down", choice_name) == 0)
+            return get_string_copy("Face Down");
+        if (strcmp("face-up", choice_name) == 0)
+            return get_string_copy("Face up");
+    }
+    if (strcmp("print-color-mode", option_name) == 0)
+    {
+        if (strcmp("monochrome", choice_name) == 0)
+            return get_string_copy("Monochrome");
+        if (strcmp("color", choice_name) == 0)
+            return get_string_copy("Color");
+    }
+    if (strcmp("orientation-requested", option_name) == 0)
+    {
+        if (strcmp("3", choice_name) == 0)
+            return get_string_copy("Potrait");
+        if (strcmp("4", choice_name) == 0)
+            return get_string_copy("Landscape");
+        if (strcmp("5", choice_name) == 0)
+            return get_string_copy("Reverse Landscape");
+        if (strcmp("6", choice_name) == 0)
+            return get_string_copy("Reverse Potrait");
+    }
+    if (strcmp("job-sheets", option_name) == 0)
+    {
+        if (strcmp("none", choice_name) == 0)
+            return get_string_copy("None");
+        if (strcmp("classified", choice_name) == 0)
+            return get_string_copy("Classified");
+        if (strcmp("confidential", choice_name) == 0)
+            return get_string_copy("Confidential");
+        if (strcmp("form", choice_name) == 0)
+            return get_string_copy("Form");
+        if (strcmp("secret", choice_name) == 0)
+            return get_string_copy("Secret");
+        if (strcmp("standard", choice_name) == 0)
+            return get_string_copy("Standard");
+        if (strcmp("topsecret", choice_name) == 0)
+            return get_string_copy("Topsecret");
+        if (strcmp("unclassified", choice_name) == 0)
+            return get_string_copy("Unclassified");
+    }
+    if (strcmp("finishings", option_name) == 0)
+    {
+        if (strcmp("none", choice_name) == 0)
+            return get_string_copy("None");
+    }
+    if (strcmp("print-scaling", option_name) == 0)
+    {
+        if (strcmp("auto", choice_name) == 0)
+            return get_string_copy("Auto");
+        if (strcmp("auto-fit", choice_name) == 0)
+            return get_string_copy("Auto-Fit");
+        if (strcmp("fill", choice_name) == 0)
+            return get_string_copy("Fill");
+        if (strcmp("fit", choice_name) == 0)
+            return get_string_copy("Fit");
+        if (strcmp("none", choice_name) == 0)
+            return get_string_copy("None");
+    }
+    if (strcmp("booklet", option_name) == 0)
+    {
+        if (strcmp("off", choice_name) == 0)
+            return get_string_copy("Off");
+        if (strcmp("on", choice_name) == 0)
+            return get_string_copy("On");
+        if (strcmp("shuffle-only", choice_name) == 0)
+            return get_string_copy("Shuffle");
+    }
+    if (strcmp("mirror", option_name) == 0)
+    {
+        if (strcmp("off", choice_name) == 0)
+            return get_string_copy("Off");
+        if (strcmp("on", choice_name) == 0)
+            return get_string_copy("On");   
+    }
+
+    return get_string_copy(choice_name);
 }
 
 char *translate_job_state(ipp_jstate_t state)
