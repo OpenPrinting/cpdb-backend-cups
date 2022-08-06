@@ -197,6 +197,11 @@ char *get_human_readable_option_name(const char *option_name);
  */
 char *get_human_readable_choice_name(const char *option_name, const char *choice_name);
 
+/**
+ * Get media dimensions for given size.
+ */
+void get_media_size(const char *media, int *width, int *height);
+
 void tryPPD(PrinterCUPS *p);
 /**********Dialog related funtions ****************/
 Dialog *get_new_Dialog();

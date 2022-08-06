@@ -410,9 +410,22 @@ gboolean ensure_printer_connection(PrinterCUPS *p)
 {
     if (p->http)
         return TRUE;
+
+    int temp = FALSE;
+    if (cups_is_temporary(p)) temp = TRUE;
+
     p->http = cupsConnectDest(p->dest, CUPS_DEST_FLAGS_NONE, 300, NULL, NULL, 0, NULL, NULL);
     if (p->http == NULL)
         return FALSE;
+
+    // update dest after temporary CUPS queue has been created
+    if (temp)
+    {
+        cups_dest_t *new_dest = cupsGetNamedDest(p->http, p->name, NULL);
+        cupsFreeDests(1, p->dest);
+        p->dest = new_dest;
+    }
+
     p->dinfo = cupsCopyDestInfo(p->http, p->dest);
     if (p->dinfo == NULL)
         return FALSE;
@@ -584,17 +597,50 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
     char **option_names;
     int num_options = get_job_creation_attributes(p, &option_names); /** number of options to be returned**/
+
+    /** Addition options not present in "job-creation-attributes" **/
+    char *additional_options[] = {"media-source", "media-type"}; 
+    int sz = sizeof(additional_options) / sizeof(char *);
+
+    /** Add additional attributes to current option_names list **/
+    option_names = realloc(option_names, sizeof(char *) * (num_options+sz)); 
+    for (int i=0; i<sz; i++) 
+        option_names[num_options+i] = get_string_copy(additional_options[i]);
+    num_options += sz;
+
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
-    Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+14))); /**Option array, which will be filled **/
-    ipp_attribute_t *vals;                                               /** Variable to store the values of the options **/
+    Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+20))); /**Option array, which will be filled **/
+    ipp_attribute_t *vals, *default_val;                                               /** Variable to store the values of the options **/
+    
+    ipp_t *media_col, *media_size_col;                                  /** Variable to store collections **/
+    ipp_attribute_t *x_dim, *y_dim, *media_margin;                      /** Variable to store media-dimensions and media-margins **/
+    pwg_media_t *pwg_media;                                             /** Variable to store pwg_media **/
+    
+    typedef struct MediaSize 
+    {
+        int x;
+        int y;
+    } MediaSize;
+
+    typedef struct MediaRange
+    {
+        int x_low;
+        int x_high;
+        int y_low;
+        int y_high;
+    } MediaRange;
+    
+    int media_size_num;    
 
     for (i = 0; i < num_options; i++)
     {
+        // Hardcode CUPS specific option
         if(
             (strcmp(option_names[i], "booklet") == 0) ||
             (strcmp(option_names[i], "ipp-attribute-fidelity") == 0) ||
             (strcmp(option_names[i], "job-sheets") == 0) ||
+            (strcmp(option_names[i], "media") == 0) ||
             (strcmp(option_names[i], "media-col") == 0) ||
             (strcmp(option_names[i], "mirror") == 0) ||
             (strcmp(option_names[i], "multiple-document-handling") == 0) ||
@@ -605,8 +651,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
             (strcmp(option_names[i], "page-delivery") == 0) ||
             (strcmp(option_names[i], "page-set") == 0) ||
             (strcmp(option_names[i], "position") == 0) ||
-            (strcmp(option_names[i], "print-scaling") == 0) ||
-            (strcmp(option_names[i], "print-quality") == 0)
+            (strcmp(option_names[i], "print-scaling") == 0)
         )
             continue;
 
@@ -637,6 +682,161 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
         optsIndex++;
     }
+    
+
+    /* 
+     * Store unique media-size & media-range in interal arrays
+     */
+    vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, "media-size");
+    if (vals)
+        media_size_num = ippGetCount(vals);
+    else
+        media_size_num = 0;
+        
+    MediaSize *media_size = (MediaSize *) malloc(media_size_num * sizeof(MediaSize));	/* Internal array of unique media-sizes */
+    MediaRange *media_range = (MediaRange *) malloc(media_size_num * sizeof(MediaRange)); /* Internal array of media-ranges */
+
+    int k1 = 0;  /* number of elements in media_size */
+    int k2 = 0;  /* number of elements in media_range */
+    for (i = 0; i < media_size_num; i++)
+    {
+        media_size_col = ippGetCollection(vals, i);
+
+        int value_tag = ippGetValueTag(ippFirstAttribute(media_size_col));
+        if (value_tag == IPP_TAG_INTEGER)
+        {
+            x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_INTEGER);
+            y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_INTEGER);
+            int x = ippGetInteger(x_dim, 0);
+            int y = ippGetInteger(y_dim, 0);
+
+            int exists = 0; 
+            for (j = 0; j < k1; j++)          /* Check if duplicate exists */
+            {
+                if ((x == media_size[j].x && y == media_size[j].y) ||      /* duplicate exists (eg. borderless) */
+                    (x == media_size[j].y && y == media_size[j].x))         /* transverse duplicate exists */
+                {
+                    exists = 1;
+                    break;
+                }
+            }
+            if (!exists)
+            {
+                media_size[k1].x = x;
+                media_size[k1].y = y;
+                k1++;
+            }
+        }
+        else if (value_tag == IPP_TAG_RANGE)
+        {
+            x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_RANGE);
+            y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_RANGE);
+            int xu, xl = ippGetRange(x_dim, 0, &xu);                   /* xu & xl are upper and lower x-dimension respectively */
+            int yu, yl = ippGetRange(y_dim, 0, &yu);                   /* yu & yl are upper and lower y-dimension respectively */
+
+            media_range[k2].x_low = xl;
+            media_range[k2].x_high = xu;
+            media_range[k2].y_low = yl;
+            media_range[k2].y_high = yu;
+            k2++;
+        }
+    }
+    
+    /* free extra space */
+    media_size = (MediaSize *) realloc(media_size, k1 * sizeof(MediaSize));
+    media_range = (MediaRange *) realloc(media_range, k2 * sizeof(MediaRange));
+    media_size_num = k1+(k2*2);
+    
+
+    /* 
+     * Add the media option 
+     */
+    opts[optsIndex].option_name = get_string_copy("media");
+    opts[optsIndex].num_supported = media_size_num;
+
+    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+    for (i = 0; i < k1; i++)
+    {
+        pwg_media = pwgMediaForSize(media_size[i].x, media_size[i].y);
+        if (pwg_media != NULL)
+            opts[optsIndex].supported_values[i] = get_string_copy(pwg_media->pwg);
+
+        if (opts[optsIndex].supported_values[i] == NULL)
+            opts[optsIndex].supported_values[i] = get_string_copy("NA");
+    }
+    for (i = 0; i < k2; i++)
+    {
+        double xl, xu, yl, yu;
+        xl = media_range[i].x_low / 100.0;
+        xu = media_range[i].x_high / 100.0;
+        yl = media_range[i].y_low / 100.0;
+        yu = media_range[i].y_high / 100.0;
+
+        char *s1 = (char *) malloc(48);
+        char *s2 = (char *) malloc(48);
+        sprintf(s1, "custom_min_%.2fx%.2fmm", xl, yl);
+        sprintf(s2, "custom_max_%.2fx%.2fmm", xu, yu);
+
+        opts[optsIndex].supported_values[k1+2*i] = get_string_copy(s1);
+        opts[optsIndex].supported_values[k1+2*i+1] = get_string_copy(s2);
+
+        free(s1); free(s2);
+    }
+
+    vals = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
+    media_col = ippGetCollection(vals, 0);
+    media_size_col = ippGetCollection(ippFindAttribute(media_col, "media-size", IPP_TAG_BEGIN_COLLECTION), 0);
+    x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_INTEGER);
+    y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_INTEGER);
+    pwg_media = pwgMediaForSize(ippGetInteger(x_dim, 0), ippGetInteger(y_dim, 0));
+
+    opts[optsIndex].default_value = get_string_copy(pwg_media->pwg);
+    if (opts[optsIndex].default_value == NULL)
+        opts[optsIndex].default_value = get_string_copy("NA");
+    
+    optsIndex++;
+
+
+    /*
+     *Add the media-{top,left,right,bottom}-margin option 
+     */
+    char def[16];
+    char *attrs[] = {"media-left-margin", "media-bottom-margin", "media-top-margin", "media-right-margin"};
+
+    default_val = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
+    
+    for (i = 0; i < 4; i++) // for each attr in attrs
+    {
+        vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, attrs[i]);
+        opts[optsIndex].option_name = get_string_copy(attrs[i]);
+        if (vals)
+            opts[optsIndex].num_supported = ippGetCount(vals);
+        else
+            opts[optsIndex].num_supported = 0;
+
+        opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
+        for (j = 0; j < opts[optsIndex].num_supported; j++)
+        {
+            opts[optsIndex].supported_values[j] = extract_ipp_attribute(vals, j, attrs[i]);
+            if (opts[optsIndex].supported_values[j] == NULL)
+            {
+                opts[optsIndex].supported_values = get_string_copy("NA");
+            }
+        }
+
+        media_col = ippGetCollection(default_val, 0);
+        media_margin = ippFindAttribute(media_col, attrs[i], IPP_TAG_INTEGER);
+        snprintf(def, 16, "%d", ippGetInteger(media_margin, 0));
+
+        opts[optsIndex].default_value = get_string_copy(def);
+        if (opts[optsIndex].default_value == NULL)
+        {
+            opts[optsIndex].default_value = get_string_copy("NA");
+        }
+
+        optsIndex++;
+    }
+
 
     /* Add the booklet option */
     opts[optsIndex].option_name = get_string_copy("booklet");
@@ -646,9 +846,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[1] = get_string_copy("on");
     opts[optsIndex].supported_values[2] = get_string_copy("shuffle-only");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -659,9 +859,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[0] = get_string_copy("off");
     opts[optsIndex].supported_values[1] = get_string_copy("on");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -678,7 +878,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[6] = get_string_copy("topsecret");
     opts[optsIndex].supported_values[7] = get_string_copy("unclassified");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
         opts[optsIndex].default_value = get_string_copy("none,none");
     }
@@ -691,9 +891,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[0] = get_string_copy("off");
     opts[optsIndex].supported_values[1] = get_string_copy("on");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -704,9 +904,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[0] = get_string_copy("separate-documents-uncollated-copies");
     opts[optsIndex].supported_values[1] = get_string_copy("separate-documents-collated-copies");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -721,9 +921,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[4] = get_string_copy("9");
     opts[optsIndex].supported_values[5] = get_string_copy("16");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -740,9 +940,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[6] = get_string_copy("btlr");
     opts[optsIndex].supported_values[7] = get_string_copy("btrl");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -755,22 +955,22 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[2] = get_string_copy("5");
     opts[optsIndex].supported_values[3] = get_string_copy("6");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     else
     {
         if (strcmp(opts[optsIndex].default_value, "potrait") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+            opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
         else if (strcmp(opts[optsIndex].default_value, "landscape") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
+            opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[1]);
         else if (strcmp(opts[optsIndex].default_value, "reverse-landscape") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[2];
+            opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[2]);
         else if (strcmp(opts[optsIndex].default_value, "reverse-potrait") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[3];
+            opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[3]);
         else
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+            opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -784,9 +984,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[3] = get_string_copy("double");
     opts[optsIndex].supported_values[4] = get_string_copy("double-thick");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -797,9 +997,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[0] = get_string_copy("same-order");
     opts[optsIndex].supported_values[1] = get_string_copy("reverse-order");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -811,9 +1011,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[1] = get_string_copy("even");
     opts[optsIndex].supported_values[2] = get_string_copy("odd");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -831,9 +1031,9 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[7] = get_string_copy("bottom-left");
     opts[optsIndex].supported_values[8] = get_string_copy("bottom-right");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
@@ -847,37 +1047,63 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].supported_values[3] = get_string_copy("fit");
     opts[optsIndex].supported_values[4] = get_string_copy("none");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
+        opts[optsIndex].default_value = get_string_copy(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
-    /* Add the print-quality option */
-    opts[optsIndex].option_name = get_string_copy("print-quality");
-    opts[optsIndex].num_supported = 3;
-    opts[optsIndex].supported_values = new_cstring_array(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = get_string_copy("3");
-    opts[optsIndex].supported_values[1] = get_string_copy("4");
-    opts[optsIndex].supported_values[2] = get_string_copy("5");
-    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
-    if (opts[optsIndex].default_value == NULL || strcmp(opts[optsIndex].default_value, "NA") == 0)
+    /* Correct the print-quality option */
+    for (i = 0; i < optsIndex; i++)
     {
-        opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
-    }
-    else
-    {
-        if (strcasecmp(opts[optsIndex].default_value, "draft") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[0];
-        else if (strcasecmp(opts[optsIndex].default_value, "normal") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
-        else if (strcasecmp(opts[optsIndex].default_value, "high") == 0)
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[2];
-        else
-            opts[optsIndex].default_value = opts[optsIndex].supported_values[1];
-    }
-    optsIndex++;
+        if (strcmp(opts[i].option_name, "print-quality") == 0)
+        {
+            for (j = 0; j < opts[i].num_supported; j++)
+            {
+                if (strcasecmp(opts[i].supported_values[j], "draft") == 0)
+                {
+                    free(opts[i].supported_values[j]);
+                    opts[i].supported_values[j] = get_string_copy("3");
+                    continue;
+                }
+                if (strcasecmp(opts[i].supported_values[j], "normal") == 0)
+                {
+                    free(opts[i].supported_values[j]);
+                    opts[i].supported_values[j] = get_string_copy("4");
+                    continue;
+                }
+                if (strcasecmp(opts[i].supported_values[j], "high") == 0)
+                {
+                    free(opts[i].supported_values[j]);
+                    opts[i].supported_values[j] = get_string_copy("5");
+                    continue;
+                }
+            }
 
+            if (strcasecmp(opts[i].default_value, "draft") == 0)
+            {
+                free(opts[i].default_value);
+                opts[i].default_value = get_string_copy("3");
+                continue;
+            }
+            if (strcasecmp(opts[i].default_value, "normal") == 0)
+            {
+                free(opts[i].default_value);
+                opts[i].default_value = get_string_copy("4");
+                continue;
+            }
+            if (strcasecmp(opts[i].default_value, "high") == 0)
+            {
+                free(opts[i].default_value);
+                opts[i].default_value = get_string_copy("5");
+                continue;
+            }
+
+            break;
+        }
+    }
+
+    free(media_size);
 
     *options = (Option *) realloc(opts, sizeof(Option) * optsIndex);
     return optsIndex;
@@ -1302,6 +1528,15 @@ void print_job(cups_job_t *j)
     printf("state : %s\n", state);
 }
 
+void get_media_size (const char *media, int *width, int *length)
+{
+    pwg_media_t *pwg;
+
+    pwg = pwgMediaForPWG(media);
+    *width = pwg->width;
+    *length = pwg->length;
+}
+
 char *get_human_readable_option_name(const char *option_name)
 {
     if (strcmp("page-set", option_name) == 0)
@@ -1411,11 +1646,11 @@ char *get_human_readable_choice_name(const char *option_name, const char *choice
     }
     if (strcmp("print-quality", option_name) == 0)
     {
-        if (strcmp("3", choice_name) == 0)
+        if (strcmp("3", choice_name) == 0 || strcasecmp("draft", choice_name) == 0)
             return get_string_copy("Draft");
-        if (strcmp("4", choice_name) == 0)
+        if (strcmp("4", choice_name) == 0 || strcasecmp("normal", choice_name) == 0)
             return get_string_copy("Normal");
-        if (strcmp("5", choice_name) == 0)
+        if (strcmp("5", choice_name) == 0 || strcasecmp("high", choice_name) == 0)
             return get_string_copy("High");
     }
     if (strcmp("sides", option_name) == 0)
@@ -1497,10 +1732,28 @@ char *get_human_readable_choice_name(const char *option_name, const char *choice
     }
     if (strcmp("output-bin", option_name) == 0)
     {
+		if (strcmp("top", choice_name) == 0)
+			return get_string_copy("Top bin");
+		if (strcmp("middle", choice_name) == 0)
+			return get_string_copy("Middle bin");
+		if (strcmp("bottom", choice_name) == 0)
+			return get_string_copy("Bottom bin");
+		if (strcmp("side", choice_name) == 0)
+			return get_string_copy("Side bin");
+		if (strcmp("left", choice_name) == 0)
+			return get_string_copy("Left bin");
+		if (strcmp("right", choice_name) == 0)
+			return get_string_copy("Right bin");
+		if (strcmp("center", choice_name) == 0)
+			return get_string_copy("Center bin");
+		if (strcmp("rear", choice_name) == 0)
+			return get_string_copy("Rear bin");
         if (strcmp("face-down", choice_name) == 0)
-            return get_string_copy("Face Down");
+            return get_string_copy("Face Down Bin");
         if (strcmp("face-up", choice_name) == 0)
-            return get_string_copy("Face up");
+            return get_string_copy("Face up Bin");
+        if (strcmp("large-capacity", choice_name) == 0)
+			return get_string_copy("Large Capacity bin");
     }
     if (strcmp("print-color-mode", option_name) == 0)
     {

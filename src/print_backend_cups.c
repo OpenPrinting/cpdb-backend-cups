@@ -249,10 +249,10 @@ static gboolean on_handle_get_human_readable_option_name(PrintBackend *interface
                                                          const gchar *option_name,
                                                          gpointer user_data)
 {
-  char *human_readable_name = get_human_readable_option_name(option_name);
-  printf("Human readable name of option %s is %s\n", option_name, human_readable_name);
-  print_backend_complete_get_human_readable_option_name(interface, invocation, human_readable_name);
-  return TRUE;
+    char *human_readable_name = get_human_readable_option_name(option_name);
+    printf("Human readable name of option %s is %s\n", option_name, human_readable_name);
+    print_backend_complete_get_human_readable_option_name(interface, invocation, human_readable_name);
+    return TRUE;
 }
 
 static gboolean on_handle_get_human_readable_choice_name(PrintBackend *interface,
@@ -262,11 +262,24 @@ static gboolean on_handle_get_human_readable_choice_name(PrintBackend *interface
                                                          gpointer user_data)
 {
     char *human_readable_name = get_human_readable_choice_name(option_name, choice_name);
-    printf("Human readable name of choice %s for option %s is %s", choice_name, option_name, human_readable_name);
+    printf("Human readable name of choice %s for option %s is %s\n", choice_name, option_name, human_readable_name);
     print_backend_complete_get_human_readable_choice_name(interface, invocation, human_readable_name);
     return TRUE;
 }
 
+static gboolean on_handle_get_media_size(PrintBackend *interface,
+                                         GDBusMethodInvocation *invocation,
+                                         const gchar *media,
+                                         gpointer user_data)
+{
+    int width, length;
+    GVariant *variant;
+
+    get_media_size(media, &width, &length);
+    variant = g_variant_new ("(ii)", width, length);
+    print_backend_complete_get_media_size(interface, invocation, variant);
+    return TRUE;
+}
 
 static gboolean on_handle_ping(PrintBackend *interface,
                                GDBusMethodInvocation *invocation,
@@ -467,6 +480,10 @@ void connect_to_signals()
                      "handle-get-human-readable-choice-name",              //instance
                      G_CALLBACK(on_handle_get_human_readable_choice_name), // signal name
                      NULL);                                                // callback
+    g_signal_connect(skeleton,
+                     "handle-get-media-size",              //instance
+                     G_CALLBACK(on_handle_get_media_size), // signal name
+                     NULL);                                // callback
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface
