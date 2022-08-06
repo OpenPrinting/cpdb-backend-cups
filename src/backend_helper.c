@@ -1656,19 +1656,19 @@ char *get_human_readable_choice_name(const char *option_name, const char *choice
     if (strcmp("sides", option_name) == 0)
     {
         if (strcmp("one-sided", choice_name) == 0)
-            return get_string_copy("False");
+            return get_string_copy("Off");
         if (strcmp("two-sided-short-edge", choice_name) == 0)
-            return get_string_copy("True, Landscape");
+            return get_string_copy("On, Landscape");
         if (strcmp("two-sided-long-edge", choice_name) == 0)
-            return get_string_copy("True, Potrait");
+            return get_string_copy("On, Potrait");
     }
     if (strcmp("multiple-document-handling", option_name) == 0)
     {
         
         if (strcmp("separate-documents-uncollated-copies", choice_name) == 0)
-            return get_string_copy("False");
+            return get_string_copy("Off");
         if (strcmp("separate-documents-collated-copies", choice_name) == 0)
-            return get_string_copy("True");
+            return get_string_copy("On");
     }
     if (strcmp("media", option_name) == 0)
     {
@@ -1681,9 +1681,9 @@ char *get_human_readable_choice_name(const char *option_name, const char *choice
     if (strcmp("page-delivery", option_name) == 0)
     {
         if (strcmp("same-order", choice_name) == 0)
-            return get_string_copy("False");
+            return get_string_copy("Off");
         if (strcmp("reverse-order", choice_name) == 0)
-            return get_string_copy("True");
+            return get_string_copy("On");
     }
     if (strcmp("page-border", option_name) == 0)
     {
