@@ -156,7 +156,7 @@ static void on_hide_remote_printers(GDBusConnection *connection,
                                     gpointer not_used)
 {
     char *dialog_name = get_string_copy(sender_name);
-    g_message("%s signal from %s\n", HIDE_REMOTE_CUPS_SIGNAL, dialog_name);
+    g_message("%s signal from %s\n", HIDE_REMOTE_SIGNAL, dialog_name);
     if (!get_hide_remote(b, dialog_name))
     {
         set_dialog_cancel(b, dialog_name);
@@ -174,7 +174,7 @@ static void on_unhide_remote_printers(GDBusConnection *connection,
                                       gpointer not_used)
 {
     char *dialog_name = get_string_copy(sender_name);
-    g_message("%s signal from %s\n", UNHIDE_REMOTE_CUPS_SIGNAL, dialog_name);
+    g_message("%s signal from %s\n", UNHIDE_REMOTE_SIGNAL, dialog_name);
     if (get_hide_remote(b, dialog_name))
     {
         set_dialog_cancel(b, dialog_name);
@@ -192,7 +192,7 @@ static void on_hide_temp_printers(GDBusConnection *connection,
                                   gpointer not_used)
 {
     char *dialog_name = get_string_copy(sender_name);
-    g_message("%s signal from %s\n", HIDE_TEMP_CUPS_SIGNAL, dialog_name);
+    g_message("%s signal from %s\n", HIDE_TEMP_SIGNAL, dialog_name);
     if (!get_hide_temp(b, dialog_name))
     {
         set_dialog_cancel(b, dialog_name);
@@ -210,7 +210,7 @@ static void on_unhide_temp_printers(GDBusConnection *connection,
                                     gpointer not_used)
 {
     char *dialog_name = get_string_copy(sender_name);
-    g_message("%s signal from %s\n", UNHIDE_TEMP_CUPS_SIGNAL, dialog_name);
+    g_message("%s signal from %s\n", UNHIDE_TEMP_SIGNAL, dialog_name);
     if (get_hide_temp(b, dialog_name))
     {
         set_dialog_cancel(b, dialog_name);
@@ -507,7 +507,7 @@ void connect_to_signals()
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface
-                                       HIDE_REMOTE_CUPS_SIGNAL,          //Signal name
+                                       HIDE_REMOTE_SIGNAL,         		 //Signal name
                                        NULL,                             /**match on all object paths**/
                                        NULL,                             /**match on all arguments**/
                                        0,                                //Flags
@@ -517,7 +517,7 @@ void connect_to_signals()
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface
-                                       UNHIDE_REMOTE_CUPS_SIGNAL,        //Signal name
+                                       UNHIDE_REMOTE_SIGNAL,        	 //Signal name
                                        NULL,                             /**match on all object paths**/
                                        NULL,                             /**match on all arguments**/
                                        0,                                //Flags
@@ -527,7 +527,7 @@ void connect_to_signals()
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface
-                                       HIDE_TEMP_CUPS_SIGNAL,            //Signal name
+                                       HIDE_TEMP_SIGNAL,     	         //Signal name
                                        NULL,                             /**match on all object paths**/
                                        NULL,                             /**match on all arguments**/
                                        0,                                //Flags
@@ -537,7 +537,7 @@ void connect_to_signals()
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface
-                                       UNHIDE_TEMP_CUPS_SIGNAL,          //Signal name
+                                       UNHIDE_TEMP_SIGNAL,          	 //Signal name
                                        NULL,                             /**match on all object paths**/
                                        NULL,                             /**match on all arguments**/
                                        0,                                //Flags
