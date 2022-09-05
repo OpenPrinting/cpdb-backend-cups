@@ -593,7 +593,18 @@ GVariant *pack_option(const Option *opt)
     g_free(t);
     return tuple_variant;
 }
-
+GVariant *pack_media(const Media *media)
+{
+	GVariant **t = g_new(GVariant *, 5);
+	t[0] = g_variant_new_string(media->name);
+	t[1] = g_variant_new_int32(media->width);
+	t[2] = g_variant_new_int32(media->length);
+	t[3] = g_variant_new_int32(media->num_margins);
+	t[4] = cpdbPackMediaArray(media->num_margins, media->margins);
+	GVariant *tuple_variant = g_variant_new_tuple(t, 5);
+	g_free(t);
+	return tuple_variant;
+}
 int get_all_options(PrinterCUPS *p, Option **options)
 {
     ensure_printer_connection(p);
@@ -614,27 +625,8 @@ int get_all_options(PrinterCUPS *p, Option **options)
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
     Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+20))); /**Option array, which will be filled **/
-    ipp_attribute_t *vals, *default_val;                                               /** Variable to store the values of the options **/
+    ipp_attribute_t *vals;                                                /** Variable to store the values of the options **/
     
-    ipp_t *media_col, *media_size_col;                                  /** Variable to store collections **/
-    ipp_attribute_t *x_dim, *y_dim, *media_margin;                      /** Variable to store media-dimensions and media-margins **/
-    pwg_media_t *pwg_media;                                             /** Variable to store pwg_media **/
-    
-    typedef struct MediaSize 
-    {
-        int x;
-        int y;
-    } MediaSize;
-
-    typedef struct MediaRange
-    {
-        int x_low;
-        int x_high;
-        int y_low;
-        int y_high;
-    } MediaRange;
-    
-    int media_size_num;    
 
     for (i = 0; i < num_options; i++)
     {
@@ -685,161 +677,6 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
         optsIndex++;
     }
-    
-
-    /* 
-     * Store unique media-size & media-range in interal arrays
-     */
-    vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, "media-size");
-    if (vals)
-        media_size_num = ippGetCount(vals);
-    else
-        media_size_num = 0;
-        
-    MediaSize *media_size = (MediaSize *) malloc(media_size_num * sizeof(MediaSize));	/* Internal array of unique media-sizes */
-    MediaRange *media_range = (MediaRange *) malloc(media_size_num * sizeof(MediaRange)); /* Internal array of media-ranges */
-
-    int k1 = 0;  /* number of elements in media_size */
-    int k2 = 0;  /* number of elements in media_range */
-    for (i = 0; i < media_size_num; i++)
-    {
-        media_size_col = ippGetCollection(vals, i);
-
-        int value_tag = ippGetValueTag(ippFirstAttribute(media_size_col));
-        if (value_tag == IPP_TAG_INTEGER)
-        {
-            x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_INTEGER);
-            y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_INTEGER);
-            int x = ippGetInteger(x_dim, 0);
-            int y = ippGetInteger(y_dim, 0);
-
-            int exists = 0; 
-            for (j = 0; j < k1; j++)          /* Check if duplicate exists */
-            {
-                if ((x == media_size[j].x && y == media_size[j].y) ||      /* duplicate exists (eg. borderless) */
-                    (x == media_size[j].y && y == media_size[j].x))         /* transverse duplicate exists */
-                {
-                    exists = 1;
-                    break;
-                }
-            }
-            if (!exists)
-            {
-                media_size[k1].x = x;
-                media_size[k1].y = y;
-                k1++;
-            }
-        }
-        else if (value_tag == IPP_TAG_RANGE)
-        {
-            x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_RANGE);
-            y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_RANGE);
-            int xu, xl = ippGetRange(x_dim, 0, &xu);                   /* xu & xl are upper and lower x-dimension respectively */
-            int yu, yl = ippGetRange(y_dim, 0, &yu);                   /* yu & yl are upper and lower y-dimension respectively */
-
-            media_range[k2].x_low = xl;
-            media_range[k2].x_high = xu;
-            media_range[k2].y_low = yl;
-            media_range[k2].y_high = yu;
-            k2++;
-        }
-    }
-    
-    /* free extra space */
-    media_size = (MediaSize *) realloc(media_size, k1 * sizeof(MediaSize));
-    media_range = (MediaRange *) realloc(media_range, k2 * sizeof(MediaRange));
-    media_size_num = k1+(k2*2);
-    
-
-    /* 
-     * Add the media option 
-     */
-    opts[optsIndex].option_name = cpdbGetStringCopy("media");
-    opts[optsIndex].num_supported = media_size_num;
-
-    opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    for (i = 0; i < k1; i++)
-    {
-        pwg_media = pwgMediaForSize(media_size[i].x, media_size[i].y);
-        if (pwg_media != NULL)
-            opts[optsIndex].supported_values[i] = cpdbGetStringCopy(pwg_media->pwg);
-
-        if (opts[optsIndex].supported_values[i] == NULL)
-            opts[optsIndex].supported_values[i] = cpdbGetStringCopy("NA");
-    }
-    for (i = 0; i < k2; i++)
-    {
-        double xl, xu, yl, yu;
-        xl = media_range[i].x_low / 100.0;
-        xu = media_range[i].x_high / 100.0;
-        yl = media_range[i].y_low / 100.0;
-        yu = media_range[i].y_high / 100.0;
-
-        char *s1 = (char *) malloc(48);
-        char *s2 = (char *) malloc(48);
-        sprintf(s1, "custom_min_%.2fx%.2fmm", xl, yl);
-        sprintf(s2, "custom_max_%.2fx%.2fmm", xu, yu);
-
-        opts[optsIndex].supported_values[k1+2*i] = cpdbGetStringCopy(s1);
-        opts[optsIndex].supported_values[k1+2*i+1] = cpdbGetStringCopy(s2);
-
-        free(s1); free(s2);
-    }
-
-    vals = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
-    media_col = ippGetCollection(vals, 0);
-    media_size_col = ippGetCollection(ippFindAttribute(media_col, "media-size", IPP_TAG_BEGIN_COLLECTION), 0);
-    x_dim = ippFindAttribute(media_size_col, "x-dimension", IPP_TAG_INTEGER);
-    y_dim = ippFindAttribute(media_size_col, "y-dimension", IPP_TAG_INTEGER);
-    pwg_media = pwgMediaForSize(ippGetInteger(x_dim, 0), ippGetInteger(y_dim, 0));
-
-    opts[optsIndex].default_value = cpdbGetStringCopy(pwg_media->pwg);
-    if (opts[optsIndex].default_value == NULL)
-        opts[optsIndex].default_value = cpdbGetStringCopy("NA");
-    
-    optsIndex++;
-
-
-    /*
-     *Add the media-{top,left,right,bottom}-margin option 
-     */
-    char def[16];
-    char *attrs[] = {"media-left-margin", "media-bottom-margin", "media-top-margin", "media-right-margin"};
-
-    default_val = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
-    
-    for (i = 0; i < 4; i++) // for each attr in attrs
-    {
-        vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, attrs[i]);
-        opts[optsIndex].option_name = cpdbGetStringCopy(attrs[i]);
-        if (vals)
-            opts[optsIndex].num_supported = ippGetCount(vals);
-        else
-            opts[optsIndex].num_supported = 0;
-
-        opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-        for (j = 0; j < opts[optsIndex].num_supported; j++)
-        {
-            opts[optsIndex].supported_values[j] = extract_ipp_attribute(vals, j, attrs[i]);
-            if (opts[optsIndex].supported_values[j] == NULL)
-            {
-                opts[optsIndex].supported_values[j] = cpdbGetStringCopy("NA");
-            }
-        }
-
-        media_col = ippGetCollection(default_val, 0);
-        media_margin = ippFindAttribute(media_col, attrs[i], IPP_TAG_INTEGER);
-        snprintf(def, 16, "%d", ippGetInteger(media_margin, 0));
-
-        opts[optsIndex].default_value = cpdbGetStringCopy(def);
-        if (opts[optsIndex].default_value == NULL)
-        {
-            opts[optsIndex].default_value = cpdbGetStringCopy("NA");
-        }
-
-        optsIndex++;
-    }
-
 
     /* Add the booklet option */
     opts[optsIndex].option_name = cpdbGetStringCopy("booklet");
@@ -1106,12 +943,233 @@ int get_all_options(PrinterCUPS *p, Option **options)
         }
     }
 
-    free(media_size);
-
     *options = (Option *) realloc(opts, sizeof(Option) * optsIndex);
     return optsIndex;
 }
+int get_all_media(PrinterCUPS *p, Media **medias)
+{	
+	ensure_printer_connection(p);
+	ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
+	const char *uri = cupsGetOption("printer-uri-supported", 
+									p->dest->num_options,
+									p->dest->options);
+	ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                 "printer-uri", NULL, uri);
+    const char *const requested_attributes[] = {"media-col-database"};
+    ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                  "requested-attributes", 1, NULL,
+                  requested_attributes);
 
+    ipp_t *response = cupsDoRequest(p->http, request, "/");
+    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    {
+        /* request failed */
+        printf("Request failed: %s\n", cupsLastErrorString());
+        return 0;
+    }
+    
+    int media_num = 0;				/** Number of unqiue media sizes **/
+    Media *meds = NULL;				/** Array of unique media sizes **/
+
+    ipp_attribute_t *mdb; // media database
+    if ((mdb = ippFindAttribute(response, "media-col-database", IPP_TAG_BEGIN_COLLECTION)) != NULL)
+    {
+		int i, j;
+		gpointer key, value;		/** Looping variables **/
+		
+        const char *name;			/** PWG name for a media **/
+		int width, length;			/** Width and length of a media **/
+		pwg_media_t *pwg_media;
+		
+		ipp_t *tuple; 				/** Single media entry in media-col-database **/
+		ipp_t *media_size;			/** media-size collection in a media tuple **/ 
+		ipp_attribute_t *attr;		/** Temporary variable for ipp attributes in a single tuple **/
+		
+		typedef struct Margin {
+			int left;
+			int right;
+			int top;
+			int bottom;
+		} Margin;
+        
+        Margin *margin;				/** Single margin struct for some media size**/
+		GList *margins;				/** List of all different margins for some media size **/
+		GHashTable *table;			/** [media-size]-->[margins] **/
+		GHashTableIter iter;		/** For iterating over the table **/
+		
+		table = g_hash_table_new(g_str_hash, g_str_equal);
+		
+		int count = ippGetCount(mdb);
+		for (int i = 0; i < count; i++)
+		{
+			margin = g_new0(Margin, 1);
+			
+			tuple = ippGetCollection(mdb, i);
+			
+			attr = ippFindAttribute(tuple, "media-left-margin", IPP_TAG_INTEGER);
+			margin->left = ippGetInteger(attr, 0);
+			attr = ippFindAttribute(tuple, "media-right-margin", IPP_TAG_INTEGER);
+			margin->right = ippGetInteger(attr, 0);
+			attr = ippFindAttribute(tuple, "media-top-margin", IPP_TAG_INTEGER);
+			margin->top = ippGetInteger(attr, 0);
+			attr = ippFindAttribute(tuple, "media-bottom-margin", IPP_TAG_INTEGER);
+			margin->bottom = ippGetInteger(attr, 0);
+			
+			attr = ippFindAttribute(tuple, "media-size", IPP_TAG_BEGIN_COLLECTION);
+			media_size = ippGetCollection(attr, 0);
+			attr = ippFindAttribute(media_size, "x-dimension", IPP_TAG_INTEGER);
+			width = ippGetInteger(attr, 0);
+			attr = ippFindAttribute(media_size, "y-dimension", IPP_TAG_INTEGER);
+			length = ippGetInteger(attr, 0);
+			
+			pwg_media = pwgMediaForSize(width, length);
+            name = pwg_media->pwg;
+			
+			margins = g_hash_table_lookup(table, name);
+			margins = g_list_prepend(margins, margin);
+			g_hash_table_replace(table, (gpointer) name, margins);
+		}
+		
+		media_num = g_hash_table_size(table);
+        meds = g_new0 (Media, media_num);
+		
+		i = 0;
+		g_hash_table_iter_init(&iter, table);
+		while (g_hash_table_iter_next(&iter, &key, &value))
+		{
+            name = (char *) key;
+            pwg_media = pwgMediaForPWG(name);
+
+			margins = (GList *) value;
+            margins = g_list_reverse(margins);
+            
+            meds[i].name = cpdbGetStringCopy(name);
+            meds[i].width = pwg_media->width;
+            meds[i].length = pwg_media->length;
+            meds[i].num_margins = g_list_length(margins);
+            meds[i].margins = malloc(sizeof(int) * meds[i].num_margins * 4);
+            
+            j = 0;
+            while (margins != NULL)
+            {
+				margin = (Margin *) margins->data;
+				
+				meds[i].margins[j][0] = margin->left;
+				meds[i].margins[j][1] = margin->right;
+				meds[i].margins[j][2] = margin->top;
+				meds[i].margins[j][3] = margin->bottom;
+				
+				margins = margins->next;
+				j++;
+			}
+            
+            i++;
+		}
+	}
+	
+	ippDelete(response);
+	
+	*medias = meds;
+	return media_num;
+}
+int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count)
+{
+    int i, j;							/** Looping variables **/
+    int num_media;						/** Variable for number of "media" supported using CUPS call **/
+    char *media_name;					/** Variable for media name **/
+    int width, length;					/** Variable for media width and media length **/
+    int optsIndex = count;				/** Index for fillings options **/
+    pwg_media_t *pwg_media;	
+    ipp_t *media_col, *media_size;		/** media_col and media_size collections in IPP request **/
+    ipp_attribute_t *vals, *default_val, *attr;
+
+    count += 5;	/** "media", "media-{top, bottom, left, right}-margins" **/
+    Option *opts = *options;
+    
+    opts = realloc(opts, sizeof(Option) * count);
+    
+     /* Add the media option */
+	opts[optsIndex].option_name = cpdbGetStringCopy("media");
+	opts[optsIndex].num_supported = media_count;
+	opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported + 2);	/** 2 extra for custom_min and custom_max sizes **/
+	for (i = 0; i < opts[optsIndex].num_supported; i++)
+    {
+		opts[optsIndex].supported_values[i] = cpdbGetStringCopy(medias[i].name);
+    }
+
+    opts[optsIndex].default_value = get_default(p, "media");
+    if (opts[optsIndex].default_value == NULL)
+    {
+        opts[optsIndex].default_value = cpdbGetStringCopy("NA");
+    }
+    
+    /** Add custom_min and custom_max media if they exist **/
+    vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, "media");
+    if (vals)
+		num_media = ippGetCount(vals);
+	else
+		num_media = 0;
+	
+	for (j = 0; j < num_media && i < (media_count + 2); j++)
+	{
+		media_name = extract_ipp_attribute(vals, i, "media");
+		
+		if (media_name == NULL)
+			continue;
+		
+		if (strncmp(media_name, "custom_min", 10) == 0 || strncmp(media_name, "custom_max", 10) == 0)
+		{
+			opts[optsIndex].supported_values[i] = cpdbGetStringCopy(media_name);
+			i++;
+		}
+		
+		free(media_name);
+	}
+	opts[optsIndex].num_supported = media_count = i;
+	
+	optsIndex++;
+    
+    /* Add the media-{top,left,right,bottom}-margin option */
+    char def[16];
+    char *attrs[] = {"media-left-margin", "media-bottom-margin", "media-top-margin", "media-right-margin"};
+
+    default_val = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
+    
+    for (i = 0; i < 4; i++) // for each attr in attrs
+    {
+        vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, attrs[i]);
+        opts[optsIndex].option_name = cpdbGetStringCopy(attrs[i]);
+        if (vals)
+            opts[optsIndex].num_supported = ippGetCount(vals);
+        else
+            opts[optsIndex].num_supported = 0;
+
+        opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
+        for (j = 0; j < opts[optsIndex].num_supported; j++)
+        {
+            opts[optsIndex].supported_values[j] = extract_ipp_attribute(vals, j, attrs[i]);
+            if (opts[optsIndex].supported_values[j] == NULL)
+            {
+                opts[optsIndex].supported_values[j] = cpdbGetStringCopy("NA");
+            }
+        }
+
+        media_col = ippGetCollection(default_val, 0);
+        attr = ippFindAttribute(media_col, attrs[i], IPP_TAG_INTEGER);
+        snprintf(def, 16, "%d", ippGetInteger(attr, 0));
+
+        opts[optsIndex].default_value = cpdbGetStringCopy(def);
+        if (opts[optsIndex].default_value == NULL)
+        {
+            opts[optsIndex].default_value = cpdbGetStringCopy("NA");
+        }
+
+        optsIndex++;
+    }
+
+    *options = opts;
+    return count;
+}
 const char *get_printer_state(PrinterCUPS *p)
 {
     const char *str;
@@ -1529,15 +1587,6 @@ void print_job(cups_job_t *j)
 
     char *state = translate_job_state(j->state);
     printf("state : %s\n", state);
-}
-
-void get_media_size (const char *media, int *width, int *length)
-{
-    pwg_media_t *pwg;
-
-    pwg = pwgMediaForPWG(media);
-    *width = pwg->width;
-    *length = pwg->length;
 }
 
 char *get_human_readable_option_name(const char *option_name)

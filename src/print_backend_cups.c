@@ -267,20 +267,6 @@ static gboolean on_handle_get_human_readable_choice_name(PrintBackend *interface
     return TRUE;
 }
 
-static gboolean on_handle_get_media_size(PrintBackend *interface,
-                                         GDBusMethodInvocation *invocation,
-                                         const gchar *media,
-                                         gpointer user_data)
-{
-    int width, length;
-    GVariant *variant;
-
-    get_media_size(media, &width, &length);
-    variant = g_variant_new ("(ii)", width, length);
-    print_backend_complete_get_media_size(interface, invocation, variant);
-    return TRUE;
-}
-
 static gboolean on_handle_ping(PrintBackend *interface,
                                GDBusMethodInvocation *invocation,
                                const gchar *printer_name,
@@ -332,9 +318,23 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
 {
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    
+    Media *medias;
+    int media_count = get_all_media(p, &medias);
+    GVariantBuilder *builder;
+    GVariant *media_variant;
+    builder = g_variant_builder_new(G_VARIANT_TYPE("a(siiia(iiii))"));
+    
+    for (int i = 0; i < media_count; i++)
+    {
+		GVariant *tuple = pack_media(&medias[i]);
+		g_variant_builder_add_value(builder, tuple);
+	}
+	media_variant = g_variant_builder_end(builder);
+    
     Option *options;
     int count = get_all_options(p, &options);
-    GVariantBuilder *builder;
+    count = add_media_to_options(p, medias, media_count, &options, count);
     GVariant *variant;
     builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssia(s))"));
 
@@ -345,7 +345,8 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
         //g_variant_unref(tuple);
     }
     variant = g_variant_builder_end(builder);
-    print_backend_complete_get_all_options(interface, invocation, count, variant);
+    
+    print_backend_complete_get_all_options(interface, invocation, count, variant, media_count, media_variant);
     free_options(count, options);
     return TRUE;
 }
@@ -480,10 +481,6 @@ void connect_to_signals()
                      "handle-get-human-readable-choice-name",              //instance
                      G_CALLBACK(on_handle_get_human_readable_choice_name), // signal name
                      NULL);                                                // callback
-    g_signal_connect(skeleton,
-                     "handle-get-media-size",              //instance
-                     G_CALLBACK(on_handle_get_media_size), // signal name
-                     NULL);                                // callback
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface

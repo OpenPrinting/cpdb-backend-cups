@@ -74,6 +74,18 @@ typedef struct _Option
     char *default_value;
 } Option;
 
+/**
+ * Represents a single 'media' size for a printer and supported margins
+ */
+typedef struct _Media
+{
+	char *name;
+	int width;
+	int length;
+	int num_margins;
+	int (*margins)[4]; /** int margins[num_margins][4]; left(0), right(1), top(2), bottom(3) **/
+} Media;
+
 /********Backend related functions*******************/
 
 /** Get a new BackendObj **/
@@ -181,6 +193,8 @@ int get_supported(PrinterCUPS *p, char ***supported_values, const char *option_n
 int get_job_creation_attributes(PrinterCUPS *p, char ***values);
 
 int get_all_options(PrinterCUPS *p, Option **options);
+int get_all_media(PrinterCUPS *p, Media **medias);
+int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
 int print_file(PrinterCUPS *p, const char *file_path, int num_settings, GVariant *settings);
 
@@ -197,10 +211,6 @@ char *get_human_readable_option_name(const char *option_name);
  */
 char *get_human_readable_choice_name(const char *option_name, const char *choice_name);
 
-/**
- * Get media dimensions for given size.
- */
-void get_media_size(const char *media, int *width, int *height);
 
 void tryPPD(PrinterCUPS *p);
 /**********Dialog related funtions ****************/
@@ -212,6 +222,7 @@ void print_option(const Option *opt);
 void free_options(int count, Option *opts);
 void unpack_option_array(GVariant *var, int num_options, Option **options);
 GVariant *pack_option(const Option *opt);
+GVariant *pack_media(const Media *media);
 /**********Mapping related functions*****************/
 Mappings *get_new_Mappings();
 
