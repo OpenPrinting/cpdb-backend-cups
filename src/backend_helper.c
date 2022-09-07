@@ -993,7 +993,7 @@ int get_all_media(PrinterCUPS *p, Media **medias)
 		} Margin;
         
         Margin *margin;				/** Single margin struct for some media size**/
-		GList *margins;				/** List of all different margins for some media size **/
+		GList *margins, *listIter;	/** List of all different margins for some media size **/
 		GHashTable *table;			/** [media-size]-->[margins] **/
 		GHashTableIter iter;		/** For iterating over the table **/
 		
@@ -1050,21 +1050,26 @@ int get_all_media(PrinterCUPS *p, Media **medias)
             meds[i].margins = malloc(sizeof(int) * meds[i].num_margins * 4);
             
             j = 0;
-            while (margins != NULL)
+            listIter = margins;
+            while (listIter != NULL)
             {
-				margin = (Margin *) margins->data;
+				margin = (Margin *) listIter->data;
 				
 				meds[i].margins[j][0] = margin->left;
 				meds[i].margins[j][1] = margin->right;
 				meds[i].margins[j][2] = margin->top;
 				meds[i].margins[j][3] = margin->bottom;
-				
-				margins = margins->next;
+
+				free(margin);
+
+				listIter = listIter->next;
 				j++;
 			}
-            
-            i++;
+			g_list_free(margins);
+			i++;
 		}
+
+		g_hash_table_destroy(table);
 	}
 	
 	ippDelete(response);
