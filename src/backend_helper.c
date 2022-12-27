@@ -584,13 +584,16 @@ void unpack_option_array(GVariant *var, int num_options, Option **options)
 }
 GVariant *pack_option(const Option *opt)
 {
-    GVariant **t = g_new(GVariant *, 4);
+    char *group_name = cpdbGetGroup(opt->option_name);
+    GVariant **t = g_new(GVariant *, 5);
     t[0] = g_variant_new_string(opt->option_name);
-    t[1] = g_variant_new_string(opt->default_value); //("s", cpdbGetStringCopy(opt->default_value));
-    t[2] = g_variant_new_int32(opt->num_supported);
-    t[3] = cpdbPackStringArray(opt->num_supported, opt->supported_values);
-    GVariant *tuple_variant = g_variant_new_tuple(t, 4);
+    t[1] = g_variant_new_string(group_name);
+    t[2] = g_variant_new_string(opt->default_value);
+    t[3] = g_variant_new_int32(opt->num_supported);
+    t[4] = cpdbPackStringArray(opt->num_supported, opt->supported_values);
+    GVariant *tuple_variant = g_variant_new_tuple(t, 5);
     g_free(t);
+    free(group_name);
     return tuple_variant;
 }
 GVariant *pack_media(const Media *media)
@@ -1592,6 +1595,97 @@ void print_job(cups_job_t *j)
 
     char *state = translate_job_state(j->state);
     printf("state : %s\n", state);
+}
+
+char *get_option_translation(PrinterCUPS *p,
+                             const char *option_name,
+                             const char *locale)
+{
+    char *copy;
+    const char *uri, *translation;
+    static const char *const req_attrs[] = {"printer-strings-uri"};
+    ipp_attribute_t *attr;
+    ipp_t *request, *response;
+    cups_array_t *opts_catalog, *printer_opts_catalog;
+
+    ensure_printer_connection(p);
+    request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
+    uri = cupsGetOption("printer-uri-supported", 
+                        p->dest->num_options,
+                        p->dest->options);
+    ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                    "printer-uri", NULL, uri);
+    ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                    "requested-attributes", 1, NULL, req_attrs);
+    response = cupsDoRequest(p->http, request, "/");
+    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    {
+        /* request failed */
+        printf("Request failed: %s\n", cupsLastErrorString());
+        return cpdbGetStringCopy(option_name);
+    }
+
+    opts_catalog = cfCatalogOptionArrayNew();
+    cfCatalogLoad(NULL, locale, opts_catalog);
+    if ((attr = ippFindAttribute(response, "printer-strings-uri",
+                                    IPP_TAG_URI)) != NULL)
+    {
+        printer_opts_catalog = cfCatalogOptionArrayNew();
+        cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
+    }
+
+    translation = cfCatalogLookUpOption((char *)option_name, 
+                                        opts_catalog, printer_opts_catalog);
+    copy = cpdbGetStringCopy(translation);
+    cupsArrayDelete(opts_catalog);
+    cupsArrayDelete(printer_opts_catalog);
+    return copy;
+}
+
+char *get_choice_translation(PrinterCUPS *p,
+                             const char *option_name,
+                             const char *choice_name,
+                             const char *locale)
+{
+    char *copy;
+    const char *uri, *translation;
+    static const char *const req_attrs[] = {"printer-strings-uri"};
+    ipp_attribute_t *attr;
+    ipp_t *request, *response;
+    cups_array_t *opts_catalog, *printer_opts_catalog;
+
+    ensure_printer_connection(p);
+    request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
+    uri = cupsGetOption("printer-uri-supported", 
+                        p->dest->num_options,
+                        p->dest->options);
+    ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                    "printer-uri", NULL, uri);
+    ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                    "requested-attributes", 1, NULL, req_attrs);
+    response = cupsDoRequest(p->http, request, "/");
+    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    {
+        /* request failed */
+        printf("Request failed: %s\n", cupsLastErrorString());
+        return cpdbGetStringCopy(choice_name);
+    }
+
+    opts_catalog = cfCatalogOptionArrayNew();
+    cfCatalogLoad(NULL, locale, opts_catalog);
+    if ((attr = ippFindAttribute(response, "printer-strings-uri",
+                                    IPP_TAG_URI)) != NULL)
+    {
+        printer_opts_catalog = cfCatalogOptionArrayNew();
+        cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
+    }
+
+    translation = cfCatalogLookUpChoice((char *)choice_name, (char *)option_name,
+                                        opts_catalog, printer_opts_catalog);
+    copy = cpdbGetStringCopy(translation);
+    cupsArrayDelete(opts_catalog);
+    cupsArrayDelete(printer_opts_catalog);
+    return copy;
 }
 
 char *get_human_readable_option_name(const char *option_name)

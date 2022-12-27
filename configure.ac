@@ -14,12 +14,13 @@ AC_PROG_CC
 
 # Checks for backend library 
 PKG_CHECK_MODULES([CPDB],[cpdb >= 2])
+PKG_CHECK_MODULES([LIBCUPSFILTERS], [libcupsfilters >= 2])
 PKG_CHECK_MODULES([GIO],[gio-2.0])
 PKG_CHECK_MODULES([GIOUNIX],[gio-unix-2.0])
 PKG_CHECK_MODULES([GLIB],[glib-2.0])
 
 # Checks for header files.
-AC_CHECK_HEADERS([stdlib.h string.h cups/cups.h])
+AC_CHECK_HEADERS([stdlib.h string.h cups/cups.h cupsfilters/catalog.h])
 
 # Checks for typedefs, structures, and compiler characteristics.
 AC_TYPE_SIZE_T

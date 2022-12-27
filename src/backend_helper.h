@@ -5,9 +5,12 @@
 #include <stdlib.h>
 #include <glib.h>
 #include <string.h>
+
 #include <cups/cups.h>
 #include <cups/ppd.h>
-#include <cpdb/cpdb.h>
+#include <cupsfilters/catalog.h>
+
+#include <cpdb/backend.h>
 
 #define INFO 3
 #define WARN 2
@@ -200,6 +203,18 @@ int print_file(PrinterCUPS *p, const char *file_path, int num_settings, GVariant
 
 int get_active_jobs_count(PrinterCUPS *p);
 gboolean cancel_job(PrinterCUPS *p, int jobid);
+
+/**
+ * Get translation of choice name for a given locale
+ */
+char *get_option_translation(PrinterCUPS *p, const char *option_name,
+                             const char *locale);
+
+/**
+ * Get translation of option name for a given locale
+ */
+char *get_choice_translation(PrinterCUPS *p, const char *option_name,
+                             const char *choice_name, const char *locale);
 
 /**
  * Get human readable names of the options.

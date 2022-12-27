@@ -2,8 +2,10 @@
 #include <stdlib.h>
 #include <glib.h>
 #include <string.h>
+
 #include <cups/cups.h>
-#include <cpdb/cpdb.h>
+
+#include <cpdb/backend.h>
 #include "backend_helper.h"
 
 #define _CUPS_NO_DEPRECATED 1
@@ -27,6 +29,7 @@ int main()
     int p = ippPort();
 
     b = get_new_BackendObj();
+    cpdbInit();
     acquire_session_bus_name(BUS_NAME);
     GMainLoop *loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
@@ -244,6 +247,53 @@ static gboolean on_handle_get_printer_state(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_get_option_translation(PrintBackend *interface,
+                                                 GDBusMethodInvocation *invocation,
+                                                 const gchar *printer_name,
+                                                 const gchar *option_name,
+                                                 const gchar *locale,
+                                                 gpointer user_data)
+{
+    const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    char *translation = get_option_translation(p, option_name, locale);
+    if (translation == NULL)
+        translation = cpdbGetStringCopy(option_name);
+    print_backend_complete_get_option_translation(interface, invocation, translation);
+    return TRUE;
+}
+
+static gboolean on_handle_get_choice_translation(PrintBackend *interface,
+                                                 GDBusMethodInvocation *invocation,
+                                                 const gchar *printer_name,
+                                                 const gchar *option_name,
+                                                 const gchar *choice_name,
+                                                 const gchar *locale,
+                                                 gpointer user_data)
+{
+    const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    char *translation = get_choice_translation(p, option_name,
+                                                choice_name, locale);
+    if (translation == NULL)
+        translation = cpdbGetStringCopy(choice_name);
+    print_backend_complete_get_choice_translation(interface, invocation, translation);
+    return TRUE;
+}
+
+static gboolean on_handle_get_group_translation(PrintBackend *interface,
+                                                GDBusMethodInvocation *invocation,
+                                                const gchar *printer_name,
+                                                const gchar *group_name,
+                                                const gchar *locale,
+                                                gpointer user_data)
+{
+    char *translation = cpdbGetGroupTranslation2(group_name, locale);
+    print_backend_complete_get_group_translation(interface, invocation, translation);
+    free(translation);
+    return TRUE;
+}
+
 static gboolean on_handle_get_human_readable_option_name(PrintBackend *interface,
                                                          GDBusMethodInvocation *invocation,
                                                          const gchar *option_name,
@@ -336,7 +386,7 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
     int count = get_all_options(p, &options);
     count = add_media_to_options(p, medias, media_count, &options, count);
     GVariant *variant;
-    builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssia(s))"));
+    builder = g_variant_builder_new(G_VARIANT_TYPE("a(sssia(s))"));
 
     for (int i = 0; i < count; i++)
     {
@@ -472,6 +522,18 @@ void connect_to_signals()
     g_signal_connect(skeleton,                      //instance
                      "handle-replace",              //signal name
                      G_CALLBACK(on_handle_replace), //callback
+                     NULL);
+    g_signal_connect(skeleton,                                      //instance
+                     "handle-get-option-translation",               //signal name
+                     G_CALLBACK(on_handle_get_option_translation),  //callback
+                     NULL);
+    g_signal_connect(skeleton,                                      //instance
+                     "handle-get-choice-translation",               //signal name
+                     G_CALLBACK(on_handle_get_choice_translation),  //callback
+                     NULL);
+    g_signal_connect(skeleton,                                      //instance
+                     "handle-get-group-translation",                //signal name
+                     G_CALLBACK(on_handle_get_group_translation),   //callback
                      NULL);
     g_signal_connect(skeleton,                                             //instance
                      "handle-get-human-readable-option-name",              //signal name
