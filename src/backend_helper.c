@@ -896,6 +896,17 @@ int get_all_options(PrinterCUPS *p, Option **options)
     }
     optsIndex++;
 
+    /* Add the billing-info option */
+    opts[optsIndex].option_name = cpdbGetStringCopy("billing-info");
+    opts[optsIndex].num_supported = 0;
+    opts[optsIndex].supported_values = NULL;
+    opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
+    if (strcmp(opts[optsIndex].default_value, "NA") == 0)
+    {
+        opts[optsIndex].default_value = cpdbGetStringCopy("");
+    }
+    optsIndex++;
+
     /* Correct the print-quality option */
     for (i = 0; i < optsIndex; i++)
     {
