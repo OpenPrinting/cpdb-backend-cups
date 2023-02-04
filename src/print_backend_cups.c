@@ -71,6 +71,55 @@ static gboolean on_handle_activate_backend(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_get_printer_list(PrintBackend *interface,
+                                           GDBusMethodInvocation *invocation,
+                                           gpointer user_data)
+{
+    int num_printers;
+    GHashTableIter iter;
+    gpointer key, value;
+    GVariantBuilder builder;
+    GVariant *printer, *printers;
+
+    cups_dest_t *dest;
+    gboolean accepting_jobs;
+    const char *state;
+    char *name, *info, *location, *make;
+
+    GHashTable *table = cups_get_all_printers();
+    const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
+
+    add_frontend(b, dialog_name);
+    num_printers = g_hash_table_size(table);
+    g_hash_table_iter_init(&iter, table);
+    g_variant_builder_init(&builder, G_VARIANT_TYPE_ARRAY);
+    while (g_hash_table_iter_next(&iter, &key, &value))
+    {
+        name = key;
+        dest = value;
+        loginfo("Found printer : %s\n", name);
+        info = cups_retrieve_string(dest, "printer-info");
+        location = cups_retrieve_string(dest, "printer-location");
+        make = cups_retrieve_string(dest, "printer-make-and-model");
+        accepting_jobs = cups_is_accepting_jobs(dest);
+        state = cups_printer_state(dest);
+        add_printer_to_dialog(b, dialog_name, dest);
+        printer = g_variant_new(CPDB_PRINTER_ARGS, dest->name, dest->name, info,
+                                location, make, accepting_jobs, state, BACKEND_NAME);
+        g_variant_builder_add(&builder, "(v)", printer);
+        free(key);
+        cupsFreeDests(1, value);
+        free(info);
+        free(location);
+        free(make);
+    }
+    g_hash_table_destroy(table);
+    printers = g_variant_builder_end(&builder);
+
+    print_backend_complete_get_printer_list(interface, invocation, num_printers, printers);
+    return TRUE;
+}
+
 gpointer list_printers(gpointer _dialog_name)
 {
     char *dialog_name = (char *)_dialog_name;
@@ -478,6 +527,10 @@ void connect_to_signals()
     g_signal_connect(skeleton,                               //instance
                      "handle-activate-backend",              //signal name
                      G_CALLBACK(on_handle_activate_backend), //callback
+                     NULL);
+    g_signal_connect(skeleton,                               //instance
+                     "handle-get-printer-list",              //signal name
+                     G_CALLBACK(on_handle_get_printer_list), //callback
                      NULL);
     g_signal_connect(skeleton,                              //instance
                      "handle-get-all-options",              //signal name

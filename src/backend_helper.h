@@ -12,6 +12,14 @@
 
 #include <cpdb/backend.h>
 
+/* New Debug macros */
+#define BACKEND_NAME "CUPS"
+#define logdebug(...) cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_DEBUG, BACKEND_NAME, __VA_ARGS__)
+#define loginfo(...)  cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_INFO, BACKEND_NAME, __VA_ARGS__)
+#define logwarn(...)  cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_WARN, BACKEND_NAME, __VA_ARGS__)
+#define logerror(...) cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_ERROR, BACKEND_NAME, __VA_ARGS__)
+
+/* Old debug macros */
 #define INFO 3
 #define WARN 2
 #define ERR 1
