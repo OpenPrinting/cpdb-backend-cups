@@ -2,7 +2,11 @@
 
 #define _CUPS_NO_DEPRECATED 1
 
+static http_t *system_conn = NULL;
+static unsigned int HttpLocalTimeout = 5;
+
 Mappings *map;
+
 /*****************BackendObj********************************/
 BackendObj *get_new_BackendObj()
 {
@@ -140,6 +144,203 @@ void unset_hide_temp_printers(BackendObj *b, const char *dialog_name)
     d->hide_temp = FALSE;
 }
 
+static int
+http_timeout_cb(http_t *http,
+		void *user_data)
+{
+    logdebug("HTTP timeout! (consider increasing HttpLocalTimeout/HttpRemoteTimeout value)\n");
+    return (0);
+}
+
+/* Connect to the system's CUPS daemon and also tell the libcups functions to
+   use the system's CUPS */
+static http_t *
+http_connect_system(void)
+{
+    const char *server = cupsServer();
+    int port = ippPort();
+
+    if (!system_conn)
+    {
+        if (server[0] == '/')
+            logdebug("Creating http connection to CUPS daemon via domain socket: %s\n",
+                        server);
+        else
+            logdebug("Creating http connection to CUPS daemon: %s:%d\n",
+                        server, port);
+        system_conn = httpConnect2(server, port, NULL, AF_UNSPEC, cupsEncryption(), 1, 3000, NULL);
+    }
+
+    if (system_conn)
+    {
+        httpSetTimeout(system_conn, HttpLocalTimeout, http_timeout_cb, NULL);
+    }
+    else
+    {
+        if (server[0] == '/')
+            logwarn("Failed creating http connection to CUPS daemon via domain socket: %s\n",
+                server);
+        else
+            logwarn("Failed creating http connection to CUPS daemon: %s:%d\n",
+                server, port);
+    }
+
+    return (system_conn);
+}
+
+/* Close connection to system's CUPS */
+static void
+http_close_system(void)
+{
+    logdebug("Closing connection to system's CUPS daemon.\n");
+    if (system_conn)
+    {
+        httpClose(system_conn);
+        system_conn = NULL;
+    }
+}
+
+/* Create a subscription for D-Bus notifications on the system's
+   CUPS. This makes the CUPS daemon fire up a D-Bus notifier
+   process. */
+int create_subscription ()
+{
+    ipp_t *req;
+    ipp_t *resp;
+    ipp_attribute_t *attr;
+    int id = 0;
+    http_t *conn = NULL;
+
+    conn = http_connect_system();
+    if (conn == NULL)
+    {
+        logwarn("Cannot connect to local CUPS to subscribe to notifications.\n");
+        return (0);
+    }
+
+    req = ippNewRequest(IPP_CREATE_PRINTER_SUBSCRIPTION);
+    ippAddString(req, IPP_TAG_OPERATION, IPP_TAG_URI,
+                "printer-uri", NULL, "/");
+    ippAddString(req, IPP_TAG_SUBSCRIPTION, IPP_TAG_KEYWORD,
+                "notify-events", NULL, "all");
+    ippAddString(req, IPP_TAG_SUBSCRIPTION, IPP_TAG_URI,
+                "notify-recipient-uri", NULL, "dbus://");
+    ippAddInteger(req, IPP_TAG_SUBSCRIPTION, IPP_TAG_INTEGER,
+                "notify-lease-duration", NOTIFY_LEASE_DURATION);
+
+    resp = cupsDoRequest(conn, req, "/");
+    if (!resp || cupsLastError() != IPP_STATUS_OK)
+    {
+        logwarn("Error subscribing to CUPS notifications: %s\n",
+                cupsLastErrorString ());
+        return (0);
+    }
+
+    attr = ippFindAttribute(resp, "notify-subscription-id", IPP_TAG_INTEGER);
+    if (attr)
+    {
+        id = ippGetInteger(attr, 0);
+    }
+    else
+    {
+        logwarn("ipp-create-printer-subscription response doesn't contain"
+                "subscription id.\n");
+    }
+
+    ippDelete(resp);
+    return (id);
+}
+
+/* Renew the D-Bus notification subscription, telling to CUPS that we
+   are still there and it should not let the notifier time out. */
+gboolean renew_subscription (int id)
+{
+    ipp_t *req;
+    ipp_t *resp;
+    http_t *http = NULL;
+
+    http = http_connect_system();
+    if (http == NULL)
+    {
+        logwarn("Cannot connect to system's CUPS to renew subscriptions!\n");
+        return FALSE;
+    }
+
+    req = ippNewRequest(IPP_RENEW_SUBSCRIPTION);
+    ippAddInteger(req, IPP_TAG_OPERATION, IPP_TAG_INTEGER,
+                    "notify-subscription-id", id);
+    ippAddString(req, IPP_TAG_OPERATION, IPP_TAG_URI,
+                    "printer-uri", NULL, "/");
+    ippAddString(req, IPP_TAG_SUBSCRIPTION, IPP_TAG_URI,
+                    "notify-recipient-uri", NULL, "dbus://");
+    ippAddInteger(req, IPP_TAG_SUBSCRIPTION, IPP_TAG_INTEGER,
+                    "notify-lease-duration", NOTIFY_LEASE_DURATION);
+
+    resp = cupsDoRequest(http, req, "/");
+    if (!resp || cupsLastError() != IPP_STATUS_OK)
+    {
+        logwarn("Error renewing CUPS subscription %d: %s\n",
+                id, cupsLastErrorString());
+        http_close_system();
+        return FALSE;
+    }
+
+    ippDelete(resp);
+    http_close_system();
+    return TRUE;
+}
+
+/* Function which is called as a timeout event handler to let the
+   renewal of the D-Bus subscription be done to the right time. */
+gboolean renew_subscription_timeout (gpointer userdata)
+{
+    int *subscription_id = userdata;
+
+    logdebug("renew_subscription_timeout() in THREAD %ld\n", pthread_self());
+
+    if (*subscription_id <= 0 || !renew_subscription(*subscription_id))
+        *subscription_id = create_subscription();
+
+    return TRUE;
+}
+
+/* Cancel the D-Bus notifier subscription, so that CUPS can terminate its
+   notifier when we shut down. */
+void cancel_subscription (int id)
+{
+    ipp_t *req;
+    ipp_t *resp;
+    http_t *http = NULL;
+
+    if (id <= 0)
+        return;
+
+    http = http_connect_system();
+    if (http == NULL)
+    {
+        logwarn("Cannot connect to system's CUPS to cancel subscriptions.\n");
+        return;
+    }
+
+    req = ippNewRequest(IPP_CANCEL_SUBSCRIPTION);
+    ippAddString(req, IPP_TAG_OPERATION, IPP_TAG_URI,
+                    "printer-uri", NULL, "/");
+    ippAddInteger(req, IPP_TAG_OPERATION, IPP_TAG_INTEGER,
+                    "notify-subscription-id", id);
+
+    resp = cupsDoRequest(http, req, "/");
+    if (!resp || cupsLastError() != IPP_STATUS_OK)
+    {
+        logwarn("Error canceling subscription to CUPS notifications: %s\n",
+                cupsLastErrorString());
+        http_close_system();
+        return;
+    }
+
+    ippDelete(resp);
+    http_close_system();
+}
+
 gboolean dialog_contains_printer(BackendObj *b, const char *dialog_name, const char *printer_name)
 {
     Dialog *d = g_hash_table_lookup(b->dialogs, dialog_name);
@@ -228,6 +429,21 @@ void send_printer_removed_signal(BackendObj *b, const char *dialog_name, const c
                                   "org.openprinting.PrintBackend",
                                   CPDB_SIGNAL_PRINTER_REMOVED,
                                   g_variant_new("(ss)", printer_name, "CUPS"),
+                                  &error);
+    g_assert_no_error(error);
+}
+
+void send_printer_state_changed_signal(BackendObj *b, const char *dialog_name, const char *printer_name,
+                                        const char *printer_state, gboolean printer_is_accepting_jobs)
+{
+    GError *error = NULL;
+    g_dbus_connection_emit_signal(b->dbus_connection,
+                                  dialog_name,
+                                  b->obj_path,
+                                  "org.openprinting.PrintBackend",
+                                  CPDB_SIGNAL_PRINTER_REMOVED,
+                                  g_variant_new("(ssbs)", printer_name, printer_state,
+                                                printer_is_accepting_jobs, "CUPS"),
                                   &error);
     g_assert_no_error(error);
 }

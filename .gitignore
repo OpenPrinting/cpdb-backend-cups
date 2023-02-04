@@ -19,6 +19,7 @@ Makefile
 Makefile.in
 src/.deps
 src/cups
+src/cups-notifier.*
 data/org.openprinting.Backend.CUPS.service
 tmp/
 */Makefile

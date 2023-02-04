@@ -5,6 +5,8 @@
 
 #include <cups/cups.h>
 
+#include "cups-notifier.h"
+
 #include <cpdb/backend.h>
 #include "backend_helper.h"
 
@@ -23,6 +25,73 @@ void connect_to_signals();
 
 BackendObj *b;
 
+void update_printer_lists()
+{
+    GHashTableIter iter;
+    gpointer key, value;
+
+    g_hash_table_iter_init(&iter, b->dialogs);
+    while (g_hash_table_iter_next(&iter, &key, &value))
+    {
+        char *dialog_name = key;
+        refresh_printer_list(b, dialog_name);
+    }
+}
+
+static void
+on_printer_state_changed (CupsNotifier *object,
+                          const gchar *text,
+                          const gchar *printer_uri,
+                          const gchar *printer,
+                          guint printer_state,
+                          const gchar *printer_state_reasons,
+                          gboolean printer_is_accepting_jobs,
+                          gpointer user_data)
+{
+    loginfo("Printer state change on printer %s: %s\n", printer, text);
+    
+    GHashTableIter iter;
+    gpointer key, value;
+
+    g_hash_table_iter_init(&iter, b->dialogs);
+    while (g_hash_table_iter_next(&iter, &key, &value))
+    {
+        const char *dialog_name = key;
+        PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer);
+        const char *state = get_printer_state(p);
+        send_printer_state_changed_signal(b, dialog_name, printer,
+                                            state, printer_is_accepting_jobs);
+    }
+}
+
+static void
+on_printer_added (CupsNotifier *object,
+                  const gchar *text,
+                  const gchar *printer_uri,
+                  const gchar *printer,
+                  guint printer_state,
+                  const gchar *printer_state_reasons,
+                  gboolean printer_is_accepting_jobs,
+                  gpointer user_data)
+{
+    loginfo("Printer added: %s\n", text);
+    update_printer_lists();
+}
+
+static void
+on_printer_deleted (CupsNotifier *object,
+                    const gchar *text,
+                    const gchar *printer_uri,
+                    const gchar *printer,
+                    guint printer_state,
+                    const gchar *printer_state_reasons,
+                    gboolean printer_is_accepting_jobs,
+                    gpointer user_data)
+{
+    loginfo("Printer deleted: %s\n", text);
+    update_printer_lists();
+}
+
 int main()
 {
     /* Initialize internal default settings of the CUPS library */
@@ -31,8 +100,48 @@ int main()
     b = get_new_BackendObj();
     cpdbInit();
     acquire_session_bus_name(BUS_NAME);
+
+    int subscription_id = create_subscription();
+
+    g_timeout_add_seconds (NOTIFY_LEASE_DURATION - 60,
+                            renew_subscription_timeout,
+                            &subscription_id);
+
+    GError *error = NULL;
+    CupsNotifier *cups_notifier = cups_notifier_proxy_new_for_bus_sync(G_BUS_TYPE_SYSTEM,
+                                                                       0,
+                                                                       NULL,
+                                                                       CUPS_DBUS_PATH,
+                                                                       NULL,
+                                                                       &error);
+    if (error)
+    {
+        logwarn("Error creating cups notify handler: %s", error->message);
+        g_error_free(error);
+        cups_notifier = NULL;
+    }
+
+    if (cups_notifier != NULL)
+    {
+        g_signal_connect(cups_notifier, "printer-state-changed",
+                            G_CALLBACK(on_printer_deleted), NULL);
+        g_signal_connect(cups_notifier, "printer-deleted",
+                            G_CALLBACK(on_printer_deleted), NULL);
+        g_signal_connect(cups_notifier, "printer-added",
+                            G_CALLBACK(on_printer_added), NULL);
+    }
+
     GMainLoop *loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
+
+    /* Main loop exited */
+    logdebug("Main loop exited");
+    g_main_loop_unref(loop);
+    loop = NULL;
+
+    cancel_subscription(subscription_id);
+    if (cups_notifier)
+        g_object_unref(cups_notifier);
 }
 
 static void acquire_session_bus_name(char *bus_name)
@@ -56,19 +165,6 @@ on_name_acquired(GDBusConnection *connection,
     b->skeleton = print_backend_skeleton_new();
     connect_to_signals();
     connect_to_dbus(b, OBJECT_PATH);
-}
-
-static gboolean on_handle_activate_backend(PrintBackend *interface,
-                                           GDBusMethodInvocation *invocation,
-                                           gpointer not_used)
-{
-    /**
-    This function starts the backend and starts sending the printers
-    **/
-    const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
-    add_frontend(b, dialog_name);
-    g_thread_new(NULL, list_printers, (gpointer)dialog_name);
-    return TRUE;
 }
 
 static gboolean on_handle_get_printer_list(PrintBackend *interface,
@@ -183,20 +279,6 @@ static void on_stop_backend(GDBusConnection *connection,
         g_message("No frontends connected .. exiting backend.\n");
         exit(EXIT_SUCCESS);
     }
-}
-
-static void on_refresh_backend(GDBusConnection *connection,
-                               const gchar *sender_name,
-                               const gchar *object_path,
-                               const gchar *interface_name,
-                               const gchar *signal_name,
-                               GVariant *parameters,
-                               gpointer not_used)
-{
-    char *dialog_name = cpdbGetStringCopy(sender_name);
-    g_message("Refresh backend signal from %s\n", dialog_name);
-    set_dialog_cancel(b, dialog_name); /// this stops the enumeration of printers
-    refresh_printer_list(b, dialog_name);
 }
 
 static void on_hide_remote_printers(GDBusConnection *connection,
@@ -525,10 +607,6 @@ void connect_to_signals()
 {
     PrintBackend *skeleton = b->skeleton;
     g_signal_connect(skeleton,                               //instance
-                     "handle-activate-backend",              //signal name
-                     G_CALLBACK(on_handle_activate_backend), //callback
-                     NULL);
-    g_signal_connect(skeleton,                               //instance
                      "handle-get-printer-list",              //signal name
                      G_CALLBACK(on_handle_get_printer_list), //callback
                      NULL);
@@ -604,16 +682,6 @@ void connect_to_signals()
                                        NULL,                             /**match on all arguments**/
                                        0,                                //Flags
                                        on_stop_backend,                  //callback
-                                       NULL,                             //user_data
-                                       NULL);
-    g_dbus_connection_signal_subscribe(b->dbus_connection,
-                                       NULL,                             //Sender name
-                                       "org.openprinting.PrintFrontend", //Sender interface
-                                       CPDB_SIGNAL_REFRESH_BACKEND,           //Signal name
-                                       NULL,                             /**match on all object paths**/
-                                       NULL,                             /**match on all arguments**/
-                                       0,                                //Flags
-                                       on_refresh_backend,               //callback
                                        NULL,                             //user_data
                                        NULL);
     g_dbus_connection_signal_subscribe(b->dbus_connection,

@@ -12,6 +12,10 @@
 
 #include <cpdb/backend.h>
 
+/* For cups-notifier */
+#define NOTIFY_LEASE_DURATION (24 * 60 * 60)
+#define CUPS_DBUS_PATH "/org/cups/cupsd/Notifier"
+
 /* New Debug macros */
 #define BACKEND_NAME "CUPS"
 #define logdebug(...) cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_DEBUG, BACKEND_NAME, __VA_ARGS__)
@@ -150,6 +154,12 @@ void set_hide_temp_printers(BackendObj *, const char *dialog_name);
 /** Unhides temporary CUPS queues for the dialog **/
 void unset_hide_temp_printers(BackendObj *, const char *dialog_name);
 
+/** Utility functions for subscribing to CUPS for notifications*/
+int create_subscription ();
+gboolean renew_subscription (int id);
+gboolean renew_subscription_timeout(gpointer userdata);
+void cancel_subscription (int id);
+
 /**
  * Returns
  * TRUE if the printer with specified name is found for the dialog
@@ -171,6 +181,8 @@ PrinterCUPS *add_printer_to_dialog(BackendObj *, const char *dialog_name, const 
  */
 void remove_printer_from_dialog(BackendObj *, const char *dialog_name, const char *printer_name);
 
+void send_printer_state_changed_signal(BackendObj *b, const char *dialog_name, const char *printer_name,
+                                        const char *printer_state, gboolean printer_is_accepting_jobs);
 void send_printer_added_signal(BackendObj *b, const char *dialog_name, cups_dest_t *dest);
 void send_printer_removed_signal(BackendObj *b, const char *dialog_name, const char *printer_name);
 void notify_removed_printers(BackendObj *b, const char *dialog_name, GHashTable *new_table);

@@ -1,4 +1,5 @@
 EXTRA_DIST = \
+	org.cups.cupsd.Notifier.xml \
 	org.openprinting.Backend.CUPS \
 	org.openprinting.Backend.CUPS.service.in
 
