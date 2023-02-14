@@ -187,6 +187,13 @@ static gboolean on_handle_get_printer_list(PrintBackend *interface,
 
     add_frontend(b, dialog_name);
     num_printers = g_hash_table_size(table);
+    if (num_printers == 0)
+    {
+        printers = g_variant_new_array(G_VARIANT_TYPE ("(v)"), NULL, 0);
+        print_backend_complete_get_printer_list(interface, invocation, 0, printers);
+        return TRUE;
+    }
+
     g_hash_table_iter_init(&iter, table);
     g_variant_builder_init(&builder, G_VARIANT_TYPE_ARRAY);
     while (g_hash_table_iter_next(&iter, &key, &value))
