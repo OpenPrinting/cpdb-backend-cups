@@ -1915,297 +1915,64 @@ char *get_choice_translation(PrinterCUPS *p,
     return copy;
 }
 
-char *get_human_readable_option_name(const char *option_name)
+GVariant *get_printer_translations(PrinterCUPS *p, const char *locale)
 {
-    if (strcmp("page-set", option_name) == 0)
-        return cpdbGetStringCopy("Page set");
-    if (strcmp("position", option_name) == 0)
-        return cpdbGetStringCopy("Position");
-    if (strcmp("number-up", option_name) == 0)
-        return cpdbGetStringCopy("Pages per side");
-    if (strcmp("number-up-layout", option_name) == 0)
-        return cpdbGetStringCopy("Multiple Page layout");
-    if (strcmp("print-resolution", option_name) == 0)
-        return cpdbGetStringCopy("Resolution");
-    if (strcmp("print-quality", option_name) == 0)
-        return cpdbGetStringCopy("Quality");
-    if (strcmp("printer-resolution", option_name) == 0)
-        return cpdbGetStringCopy("Printer resolution");
-    if (strcmp("sides", option_name) == 0)
-        return cpdbGetStringCopy("Two-sided");
-    if (strcmp("multiple-document-handling", option_name) == 0)
-        return cpdbGetStringCopy("Collate");
-    if (strcmp("media", option_name) == 0)
-        return cpdbGetStringCopy("Paper size");
-    if (strcmp("page-delivery", option_name) == 0)
-        return cpdbGetStringCopy("Reverse");
-    if (strcmp("page-border", option_name) == 0)
-        return cpdbGetStringCopy("Page border");
-    if (strcmp("job-hold-until", option_name) == 0)
-        return cpdbGetStringCopy("Print job at");
-    if (strcmp("job-priority", option_name) == 0)
-        return cpdbGetStringCopy("Priority");
-    if (strcmp("job-name", option_name) == 0)
-        return cpdbGetStringCopy("Job name");
-    if (strcmp("output-bin", option_name) == 0)
-        return cpdbGetStringCopy("Output tray");
-    if (strcmp("page-ranges", option_name) == 0)
-        return cpdbGetStringCopy("Range");
-    if (strcmp("print-color-mode", option_name) == 0)
-        return cpdbGetStringCopy("Color mode");
-    if (strcmp("copies", option_name) == 0)
-        return cpdbGetStringCopy("Copies");
-    if (strcmp("orientation-requested", option_name) == 0)
-        return cpdbGetStringCopy("Orientation");
-    if (strcmp("job-sheets", option_name) == 0)
-        return cpdbGetStringCopy("Paper type");
-    if (strcmp("finishings", option_name) == 0)
-        return cpdbGetStringCopy("Finishings");
-    if (strcmp("print-scaling", option_name) == 0)
-        return cpdbGetStringCopy("Page scaling");
-    if (strcmp("booklet", option_name) == 0)
-        return cpdbGetStringCopy("Booklet");
-    if (strcmp("mirror", option_name) == 0)
-        return cpdbGetStringCopy("Mirror");
-    return cpdbGetStringCopy(option_name);
-}
+    int num_opts;
+    Option *opts;
+    GVariant *translations;
+    GVariantBuilder *builder;
 
-char *get_human_readable_choice_name(const char *option_name, const char *choice_name)
-{
-    if (strcmp("page-set", option_name) == 0)
-    {
-        if (strcmp("all", choice_name) == 0)
-            return cpdbGetStringCopy("All pages");
-        if (strcmp("odd", choice_name) == 0)
-            return cpdbGetStringCopy("Odd pages");
-        if (strcmp("even", choice_name) == 0)
-            return cpdbGetStringCopy("Even pages");
-    }
-    if (strcmp("position", option_name) == 0)
-    {
-        if (strcmp("center", choice_name) == 0)
-            return cpdbGetStringCopy("Center");
-        if (strcmp("top", choice_name) == 0)
-            return cpdbGetStringCopy("Top");
-        if (strcmp("bottom", choice_name) == 0)
-            return cpdbGetStringCopy("Bottom");
-        if (strcmp("left", choice_name) == 0)
-            return cpdbGetStringCopy("Left");
-        if (strcmp("right", choice_name) == 0)
-            return cpdbGetStringCopy("Right");
-        if (strcmp("top-left", choice_name) == 0)
-            return cpdbGetStringCopy("Top Left");
-        if (strcmp("top-right", choice_name) == 0)
-            return cpdbGetStringCopy("Top Right");
-        if (strcmp("bottom-left", choice_name) == 0)
-            return cpdbGetStringCopy("Bottom Left");
-        if (strcmp("bottom-right", choice_name) == 0)
-            return cpdbGetStringCopy("Bottom Right");
-    }
-    if (strcmp("number-up-layout", option_name) == 0)
-    {
-        if (strcmp("lrtb", choice_name) == 0)
-            return cpdbGetStringCopy("Left to Right, Top to Bottom");
-        if (strcmp("lrbt", choice_name) == 0)
+    char *group;
+    char *name_tr, *group_tr, *choice_tr;
+    char *name_key, *group_key, *choice_key;
 
-            return cpdbGetStringCopy("Left to Right, Bottom to Top");
-        if (strcmp("rltb", choice_name) == 0)
-            return cpdbGetStringCopy("Right to Left, Top to Bottom");  
-        if (strcmp("rlbt", choice_name) == 0)
-            return cpdbGetStringCopy("Right to Left, Bottom to Top"); 
-        if (strcmp("tblr", choice_name) == 0)
-            return cpdbGetStringCopy("Top to Bottom, Left to Right");
-        if (strcmp("tbrl", choice_name) == 0)
-            return cpdbGetStringCopy("Top to Bottom, Right to Left");
-        if (strcmp("btlr", choice_name) == 0)
-            return cpdbGetStringCopy("Bottom to Top, Left to Right");  
-        if (strcmp("btrl", choice_name) == 0)
-            return cpdbGetStringCopy("Bottom to Top, Right to Left"); 
-    }
-    if (strcmp("print-quality", option_name) == 0)
+    num_opts = get_all_options(p, &opts);
+    builder = g_variant_builder_new(G_VARIANT_TYPE(CPDB_TL_DICT_ARGS));
+    for (int i = 0; i < num_opts; i++)
     {
-        if (strcmp("3", choice_name) == 0 || strcasecmp("draft", choice_name) == 0)
-            return cpdbGetStringCopy("Draft");
-        if (strcmp("4", choice_name) == 0 || strcasecmp("normal", choice_name) == 0)
-            return cpdbGetStringCopy("Normal");
-        if (strcmp("5", choice_name) == 0 || strcasecmp("high", choice_name) == 0)
-            return cpdbGetStringCopy("High");
-    }
-    if (strcmp("sides", option_name) == 0)
-    {
-        if (strcmp("one-sided", choice_name) == 0)
-            return cpdbGetStringCopy("Off");
-        if (strcmp("two-sided-short-edge", choice_name) == 0)
-            return cpdbGetStringCopy("On, Landscape");
-        if (strcmp("two-sided-long-edge", choice_name) == 0)
-            return cpdbGetStringCopy("On, Potrait");
-    }
-    if (strcmp("multiple-document-handling", option_name) == 0)
-    {
-        
-        if (strcmp("separate-documents-uncollated-copies", choice_name) == 0)
-            return cpdbGetStringCopy("Off");
-        if (strcmp("separate-documents-collated-copies", choice_name) == 0)
-            return cpdbGetStringCopy("On");
-    }
-    if (strcmp("media", option_name) == 0)
-    {
-        pwg_media_t *pwg_media;
-        
-        pwg_media = pwgMediaForPWG(choice_name);
-        if (pwg_media != NULL)
-            return cpdbGetStringCopy(pwg_media->ppd);
-    }
-    if (strcmp("page-delivery", option_name) == 0)
-    {
-        if (strcmp("same-order", choice_name) == 0)
-            return cpdbGetStringCopy("Off");
-        if (strcmp("reverse-order", choice_name) == 0)
-            return cpdbGetStringCopy("On");
-    }
-    if (strcmp("page-border", option_name) == 0)
-    {
-        if (strcmp("none", choice_name) == 0)
-            return cpdbGetStringCopy("None");
-        if (strcmp("single", choice_name) == 0)
-            return cpdbGetStringCopy("Single");
-        if (strcmp("single-thick", choice_name) == 0)
-            return cpdbGetStringCopy("Single Thick");
-        if (strcmp("double", choice_name) == 0)
-            return cpdbGetStringCopy("Double");
-        if (strcmp("double", choice_name) == 0)
-            return cpdbGetStringCopy("Double Thick");
-    }
-    if (strcmp("job-hold-until", option_name) == 0)
-    {
-        if (strcmp("no-hold", choice_name) == 0)
-            return cpdbGetStringCopy("No hold");
-        if (strcmp("indefinite", choice_name) == 0)
-            return cpdbGetStringCopy("Indefinite");
-        if (strcmp("day-time", choice_name) == 0)
-            return cpdbGetStringCopy("Day time");
-        if (strcmp("evening", choice_name) == 0)
-            return cpdbGetStringCopy("Evening");
-        if (strcmp("night", choice_name) == 0)
-            return cpdbGetStringCopy("Night");
-        if (strcmp("second-shift", choice_name) == 0)
-            return cpdbGetStringCopy("Second shift");
-        if (strcmp("third-shift", choice_name) == 0)
-            return cpdbGetStringCopy("Third shift");
-        if (strcmp("weekend", choice_name) == 0)
-            return cpdbGetStringCopy("Weekend");
-    }
-    if (strcmp("job-priority", option_name) == 0)
-    {
-        int val = atoi(choice_name);
+        /* add translation for option name */
+        name_tr = get_option_translation(p, opts[i].option_name, locale);
+        name_key = cpdbConcatSep(CPDB_OPT_PREFIX, opts[i].option_name);
+        if (name_tr)
+        {
+            logdebug("Translation '%s' : '%s'\n", name_key, name_tr);
+            g_variant_builder_add(builder, CPDB_TL_ARGS, name_key, name_tr);
+        }
+        g_free(name_tr);
 
-        if (val <= 30)
-            return cpdbGetStringCopy("Low");
-        if (val <= 50)
-            return cpdbGetStringCopy("Medium");
-        if (val <= 80)
-            return cpdbGetStringCopy("High");
-        if (val <= 100)
-            return cpdbGetStringCopy("Urgent");
-    }
-    if (strcmp("output-bin", option_name) == 0)
-    {
-		if (strcmp("top", choice_name) == 0)
-			return cpdbGetStringCopy("Top bin");
-		if (strcmp("middle", choice_name) == 0)
-			return cpdbGetStringCopy("Middle bin");
-		if (strcmp("bottom", choice_name) == 0)
-			return cpdbGetStringCopy("Bottom bin");
-		if (strcmp("side", choice_name) == 0)
-			return cpdbGetStringCopy("Side bin");
-		if (strcmp("left", choice_name) == 0)
-			return cpdbGetStringCopy("Left bin");
-		if (strcmp("right", choice_name) == 0)
-			return cpdbGetStringCopy("Right bin");
-		if (strcmp("center", choice_name) == 0)
-			return cpdbGetStringCopy("Center bin");
-		if (strcmp("rear", choice_name) == 0)
-			return cpdbGetStringCopy("Rear bin");
-        if (strcmp("face-down", choice_name) == 0)
-            return cpdbGetStringCopy("Face Down Bin");
-        if (strcmp("face-up", choice_name) == 0)
-            return cpdbGetStringCopy("Face up Bin");
-        if (strcmp("large-capacity", choice_name) == 0)
-			return cpdbGetStringCopy("Large Capacity bin");
-    }
-    if (strcmp("print-color-mode", option_name) == 0)
-    {
-        if (strcmp("monochrome", choice_name) == 0)
-            return cpdbGetStringCopy("Monochrome");
-        if (strcmp("color", choice_name) == 0)
-            return cpdbGetStringCopy("Color");
-    }
-    if (strcmp("orientation-requested", option_name) == 0)
-    {
-        if (strcmp("3", choice_name) == 0)
-            return cpdbGetStringCopy("Potrait");
-        if (strcmp("4", choice_name) == 0)
-            return cpdbGetStringCopy("Landscape");
-        if (strcmp("5", choice_name) == 0)
-            return cpdbGetStringCopy("Reverse Landscape");
-        if (strcmp("6", choice_name) == 0)
-            return cpdbGetStringCopy("Reverse Potrait");
-    }
-    if (strcmp("job-sheets", option_name) == 0)
-    {
-        if (strcmp("none", choice_name) == 0)
-            return cpdbGetStringCopy("None");
-        if (strcmp("classified", choice_name) == 0)
-            return cpdbGetStringCopy("Classified");
-        if (strcmp("confidential", choice_name) == 0)
-            return cpdbGetStringCopy("Confidential");
-        if (strcmp("form", choice_name) == 0)
-            return cpdbGetStringCopy("Form");
-        if (strcmp("secret", choice_name) == 0)
-            return cpdbGetStringCopy("Secret");
-        if (strcmp("standard", choice_name) == 0)
-            return cpdbGetStringCopy("Standard");
-        if (strcmp("topsecret", choice_name) == 0)
-            return cpdbGetStringCopy("Topsecret");
-        if (strcmp("unclassified", choice_name) == 0)
-            return cpdbGetStringCopy("Unclassified");
-    }
-    if (strcmp("finishings", option_name) == 0)
-    {
-        if (strcmp("none", choice_name) == 0)
-            return cpdbGetStringCopy("None");
-    }
-    if (strcmp("print-scaling", option_name) == 0)
-    {
-        if (strcmp("auto", choice_name) == 0)
-            return cpdbGetStringCopy("Auto");
-        if (strcmp("auto-fit", choice_name) == 0)
-            return cpdbGetStringCopy("Auto-Fit");
-        if (strcmp("fill", choice_name) == 0)
-            return cpdbGetStringCopy("Fill");
-        if (strcmp("fit", choice_name) == 0)
-            return cpdbGetStringCopy("Fit");
-        if (strcmp("none", choice_name) == 0)
-            return cpdbGetStringCopy("None");
-    }
-    if (strcmp("booklet", option_name) == 0)
-    {
-        if (strcmp("off", choice_name) == 0)
-            return cpdbGetStringCopy("Off");
-        if (strcmp("on", choice_name) == 0)
-            return cpdbGetStringCopy("On");
-        if (strcmp("shuffle-only", choice_name) == 0)
-            return cpdbGetStringCopy("Shuffle");
-    }
-    if (strcmp("mirror", option_name) == 0)
-    {
-        if (strcmp("off", choice_name) == 0)
-            return cpdbGetStringCopy("Off");
-        if (strcmp("on", choice_name) == 0)
-            return cpdbGetStringCopy("On");   
-    }
+        /* add translation for option group */
+        group = cpdbGetGroup(opts[i].option_name);
+        group_key = cpdbConcatSep(CPDB_GRP_PREFIX, group);
+        group_tr = cpdbGetGroupTranslation2(group, locale);
+        if (group_tr)
+        {
+            logdebug("Translation '%s' : '%s'\n", group_key, group_tr);
+            g_variant_builder_add(builder, CPDB_TL_ARGS, group_key, group_tr);
+        }
+        g_free(group);
+        g_free(group_key);
+        g_free(group_tr);
 
-    return cpdbGetStringCopy(choice_name);
+        /* add translation for option choices */
+        for (int j = 0; j < opts[i].num_supported; j++)
+        {
+            choice_tr = get_choice_translation(p, opts[i].option_name, opts[i].supported_values[j], locale);
+            choice_key = cpdbConcatSep(name_key, opts[i].supported_values[j]);
+            if (choice_tr)
+            {
+                logdebug("Translation '%s' : '%s'\n", choice_key, choice_tr);
+                g_variant_builder_add(builder, CPDB_TL_ARGS, choice_key, choice_tr);
+            }
+            g_free(choice_key);
+            g_free(choice_tr);
+        }
+
+        g_free(name_key);
+    }
+    translations = g_variant_builder_end(builder);
+    free_options(num_opts, opts);
+
+    return translations;
 }
 
 char *translate_job_state(ipp_jstate_t state)

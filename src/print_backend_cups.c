@@ -223,6 +223,24 @@ static gboolean on_handle_get_printer_list(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_get_all_translations(PrintBackend *interface,
+                                               GDBusMethodInvocation *invocation,
+                                               const gchar *printer_name,
+                                               const gchar *locale,
+                                               gpointer user_data)
+{
+    PrinterCUPS *p;
+    GVariant *translations;
+    const char *dialog_name;
+
+    dialog_name = g_dbus_method_invocation_get_sender(invocation);
+    p = get_printer_by_name(b, dialog_name, printer_name);
+    translations = get_printer_translations(p, locale);
+    print_backend_complete_get_all_translations(interface, invocation, translations);
+
+    return TRUE;
+}
+
 gpointer list_printers(gpointer _dialog_name)
 {
     char *dialog_name = (char *)_dialog_name;
@@ -429,29 +447,6 @@ static gboolean on_handle_get_group_translation(PrintBackend *interface,
     char *translation = cpdbGetGroupTranslation2(group_name, locale);
     print_backend_complete_get_group_translation(interface, invocation, translation);
     free(translation);
-    return TRUE;
-}
-
-static gboolean on_handle_get_human_readable_option_name(PrintBackend *interface,
-                                                         GDBusMethodInvocation *invocation,
-                                                         const gchar *option_name,
-                                                         gpointer user_data)
-{
-    char *human_readable_name = get_human_readable_option_name(option_name);
-    printf("Human readable name of option %s is %s\n", option_name, human_readable_name);
-    print_backend_complete_get_human_readable_option_name(interface, invocation, human_readable_name);
-    return TRUE;
-}
-
-static gboolean on_handle_get_human_readable_choice_name(PrintBackend *interface,
-                                                         GDBusMethodInvocation *invocation,
-                                                         const gchar *option_name,
-                                                         const gchar *choice_name,
-                                                         gpointer user_data)
-{
-    char *human_readable_name = get_human_readable_choice_name(option_name, choice_name);
-    printf("Human readable name of choice %s for option %s is %s\n", choice_name, option_name, human_readable_name);
-    print_backend_complete_get_human_readable_choice_name(interface, invocation, human_readable_name);
     return TRUE;
 }
 
@@ -673,14 +668,10 @@ void connect_to_signals()
                      "handle-get-group-translation",                //signal name
                      G_CALLBACK(on_handle_get_group_translation),   //callback
                      NULL);
-    g_signal_connect(skeleton,                                             //instance
-                     "handle-get-human-readable-option-name",              //signal name
-                     G_CALLBACK(on_handle_get_human_readable_option_name), //callback
-                     NULL);
     g_signal_connect(skeleton,
-                     "handle-get-human-readable-choice-name",              //instance
-                     G_CALLBACK(on_handle_get_human_readable_choice_name), // signal name
-                     NULL);                                                // callback
+                     "handle-get-all-translations",
+                     G_CALLBACK(on_handle_get_all_translations),
+                     NULL);
     g_dbus_connection_signal_subscribe(b->dbus_connection,
                                        NULL,                             //Sender name
                                        "org.openprinting.PrintFrontend", //Sender interface

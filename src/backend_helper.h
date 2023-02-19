@@ -237,14 +237,9 @@ char *get_choice_translation(PrinterCUPS *p, const char *option_name,
                              const char *choice_name, const char *locale);
 
 /**
- * Get human readable names of the options.
+ * Get translations for all printer strings
  */
-char *get_human_readable_option_name(const char *option_name);
-
-/**
- * Get human readable names of choices of the options.
- */
-char *get_human_readable_choice_name(const char *option_name, const char *choice_name);
+GVariant *get_printer_translations(PrinterCUPS *p, const char *locale);
 
 
 void tryPPD(PrinterCUPS *p);
