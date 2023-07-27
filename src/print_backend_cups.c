@@ -12,7 +12,6 @@
 
 #define _CUPS_NO_DEPRECATED 1
 #define BUS_NAME "org.openprinting.Backend.CUPS"
-#define OBJECT_PATH "/"
 
 static void
 on_name_acquired(GDBusConnection *connection,
@@ -164,7 +163,7 @@ on_name_acquired(GDBusConnection *connection,
     b->dbus_connection = connection;
     b->skeleton = print_backend_skeleton_new();
     connect_to_signals();
-    connect_to_dbus(b, OBJECT_PATH);
+    connect_to_dbus(b, CPDB_BACKEND_OBJ_PATH);
 }
 
 static gboolean on_handle_get_printer_list(PrintBackend *interface,

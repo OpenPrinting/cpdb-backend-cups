@@ -35,13 +35,6 @@ PKG_CHECK_VAR([DBUS_SERVICES_DIR], [dbus-1], [session_bus_services_dir],
   AC_MSG_FAILURE([cannot locate session_bus_services_dir])
 )
 
-# The info directory which will be read by the frontend
-AC_MSG_CHECKING([CPDB backend info path])
-PKG_CHECK_VAR([INFO_DIR], [cpdb], [cpdb_backend_info_dir],
-  AC_MSG_RESULT($INFO_DIR),
-  AC_MSG_FAILURE([cannot locate cpdb_backend_info_dir])
-)
-
 # The directory for the backend executables
 AC_MSG_CHECKING([CPDB backend executables path])
 PKG_CHECK_VAR([CPDB_BACKEND_DIR], [cpdb], [cpdb_backend_exec_dir],
