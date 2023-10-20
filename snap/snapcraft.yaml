@@ -1,0 +1,296 @@
+name: cpdb-backend-cups
+base: core22
+version: '1.0'
+summary: CUPS Backend for the common printing dialog
+description: |
+  The Common Print Dialog Backends project aims to move the responsability
+  on the part of the print dialog which communicates with the print system
+  away from the GUI toolkit/app developers to the print system's developers
+  and also to bring all print technologies available to the user
+  (CUPS, cloud printing services, ...) into all application's print dialogs.
+
+grade: stable
+confinement: strict
+
+# Only build on the architectures supported
+architectures:
+  - build-on: amd64
+  - build-on: arm64
+  - build-on: armhf
+
+slots:
+  dbus-openprinting-backend-cups:
+    interface: dbus
+    bus: session
+    name: org.openprinting.Backend.CUPS
+
+apps:
+  cpdb-backend-cups:
+    command: scripts/run-cpdb-backend-cups
+    daemon: simple
+    daemon-scope: user
+    activates-on: 
+    - dbus-openprinting-backend-cups
+    plugs: [cups]
+
+parts:
+  cpdb-libs:
+    source: https://github.com/OpenPrinting/cpdb-libs
+    source-type: git
+    plugin: autotools
+    autotools-configure-parameters:
+      - --prefix=/usr
+    build-packages:
+      - autoconf
+      - automake
+      - autopoint
+      - libtool
+      - autotools-dev
+      - pkg-config
+      - libglib2.0-dev 
+      - libdbus-1-dev
+    stage-packages:
+      - libglib2.0-0
+      - libdbus-1-3
+
+  qpdf:
+    source: https://github.com/qpdf/qpdf/releases/download/v11.6.3/qpdf-11.6.3.tar.gz
+    plugin: cmake
+    cmake-parameters:
+      - -DCMAKE_INSTALL_PREFIX=/
+      - -DCMAKE_BUILD_RPATH_USE_ORIGIN=1
+      - -DUSE_IMPLICIT_CRYPTO=0
+      - -DREQUIRE_CRYPTO_GNUTLS=1
+      - -DSHOW_FAILED_TEST_OUTPUT=1
+      - -DCMAKE_BUILD_TYPE=RelWithDebInfo
+      - -DQTEST_COLOR=0
+    build-packages:
+      - cmake
+      - g++
+      - libjpeg-dev
+      - zlib1g-dev
+      - libgnutls28-dev
+    stage-packages:
+      - libjpeg-turbo8
+    stage:
+      # The *.la file which gets installed by "make install" contains a
+      # wrong prefix, breaking parts of this Snap which use this library
+      - -usr/lib/lib*.la
+    prime:
+      - lib/*/lib*.so*
+      - usr/lib/lib*.so*
+      - usr/lib/*/lib*.so*
+      - -etc/fonts
+      - -var
+      - -usr/include
+      - -share/man
+      - -share/doc
+      - -share/lintian
+      - -usr/share/fonts
+      - -usr/share/man
+      - -usr/share/doc
+      - -usr/share/doc-base
+      - -usr/share/lintian
+      - -usr/lib/libqpdf.a
+      - -usr/lib/libqpdf.la
+      - -usr/lib/pkgconfig
+
+  ghostscript:
+    source: https://github.com/ArtifexSoftware/ghostpdl-downloads/releases/download/gs10012/ghostscript-10.01.2.tar.gz
+    plugin: autotools
+    # We only need PostScript output, for converting PDF input
+    autotools-configure-parameters:
+      - --prefix=/usr
+      - --without-x
+      - --disable-gtk
+      - --with-drivers=ps2write
+      - --enable-freetype
+      - --without-tesseract
+      - --datarootdir=/snap/cpdb-backend-cups/current/usr/share/
+    stage-packages:
+      - libpaper1
+      - libfontconfig1
+      - libfreetype6
+      - libpng16-16
+    prime:
+      - usr/bin/gs
+      - lib/*/lib*.so*
+      - usr/lib/*/lib*.so*
+      - usr/share/ghostscript
+      - -etc/fonts
+      - -var
+      - -usr/include
+      - -usr/lib/pkgconfig
+      - -usr/share/fonts
+      - -usr/share/man
+      - -usr/share/doc
+      - -usr/share/doc-base
+      - -usr/share/lintian
+      - -snap
+    organize:
+      snap/cpdb-backend-cups/current/usr/share: usr/share
+    after: [cups]
+
+  cups:
+    source: https://github.com/OpenPrinting/cups
+    source-type: git
+    source-depth: 1
+    source-tag: v2.4.7
+    plugin: autotools
+    # We only need libcups (with headers, ...)
+    override-build: |
+      set -eux
+      ./configure --sysconfdir=/var/snap/cpdb-backend-cups/common/
+      cd cups
+      make
+      cd ..
+      mkdir -p $CRAFT_PART_INSTALL/usr/lib
+      cp cups/libcups.a $CRAFT_PART_INSTALL/usr/lib/
+      cp -P cups/libcups.so* $CRAFT_PART_INSTALL/usr/lib/
+      mkdir -p $CRAFT_PART_INSTALL/usr/include/cups
+      cp cups/*.h $CRAFT_PART_INSTALL/usr/include/cups/
+      mkdir -p $CRAFT_PART_INSTALL/usr/bin
+      cp cups-config $CRAFT_PART_INSTALL/usr/bin/
+      #craftctl default
+    build-packages:
+      - patch
+      - gettext
+      - autoconf
+      - automake
+      - libtool
+      - autotools-dev
+      - pkg-config
+      - libavahi-client-dev
+      - libavahi-common-dev
+      - libavahi-compat-libdnssd-dev
+      - libdbus-1-dev
+      - libfontconfig1-dev
+      - libfreetype6-dev
+      - libgnutls28-dev
+      - libjpeg-dev
+      - libldap2-dev
+      - libkrb5-dev
+      - libpam0g-dev
+      - libpaper-dev
+      - libpng-dev
+      - libusb-1.0-0-dev
+      - perl-base
+    stage-packages:
+      - libusb-1.0-0
+      - libavahi-common3
+      - libavahi-client3
+      - libicu70
+    prime:
+      - -etc/fonts
+      - -var
+      - -usr/include
+      - -usr/lib/pkgconfig
+      - -usr/share/fonts
+      - -usr/share/man
+      - -usr/share/doc
+      - -usr/share/doc-base
+      - -usr/share/lintian
+      - lib/*/lib*.so*
+      - usr/lib/lib*.so*
+      - usr/lib/*/lib*.so*
+      - usr/lib/cpdb-backend-cups/backend/*
+     # Reported unused by snapcraft linter
+      - -usr/lib/*/libdconf.*
+      - -usr/lib/*/libicuio.*
+      - -usr/lib/*/libicutest.*
+      - -usr/lib/*/libicutu.*
+      - -usr/lib/*/libicuuc.*
+      - -usr/lib/*/libicui18n.*
+
+  libcupsfilters:
+    source: https://github.com/OpenPrinting/libcupsfilters
+    source-type: git
+    source-depth: 1
+    plugin: autotools
+    # We only need libcupsfilters itself. so we simply do not prime the
+    # auxiliary files (/usr/share)
+    autotools-configure-parameters:
+      - --prefix=/usr
+      - --disable-avahi
+      - --disable-mutool
+    # To find the libraries built in this Snap
+    build-environment:
+      - LD_LIBRARY_PATH: "${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CRAFT_STAGE/usr/lib"
+    build-packages:
+      - gettext
+      - autoconf
+      - automake
+      - autotools-dev
+      - pkg-config
+      - g++
+      - sharutils
+      - liblcms2-dev
+      - libpoppler-cpp-dev
+      - libpng-dev
+      - libjpeg-dev
+      - libtiff5-dev
+      - zlib1g-dev
+      - libfontconfig1-dev
+      - libdbus-1-dev
+      - libexif-dev
+    stage-packages:
+      - libpoppler-cpp0v5
+      - libjbig0
+      - liblcms2-2
+      - libnspr4
+      - libnss3
+      - libopenjp2-7
+      - libpoppler118
+      - libtiff5
+      - libwebp7
+      - libexif12
+    stage:
+      # The *.la file which gets installed by "make install" contains a
+      # wrong prefix, breaking parts of this Snap which use this library
+      - -usr/lib/lib*.la
+    prime:
+      - -etc
+      - -var
+      - -usr/include
+      - -usr/lib/pkgconfig
+       - usr/share/cups
+      - -usr/share/fonts
+      - -usr/share/man
+      - -usr/share/doc
+      - -usr/share/doc-base
+      - -usr/share/lintian
+      - lib/*/lib*.so*
+      - usr/lib/lib*.so*
+      - usr/lib/*/lib*.so*
+      - usr/lib/*/nss
+      # Reported unused by snapcraft linter
+      - -usr/lib/*/libssl3.*
+    after: [cups, qpdf, ghostscript]
+
+  cpdb-backend-cups:
+    source: .
+    plugin: autotools
+    autotools-configure-parameters:
+      - --prefix=/usr
+    # To find the libraries built in this Snap
+    build-environment:
+      - LD_LIBRARY_PATH: "${LD_LIBRARY_PATH:+$LD_LIBRARY_PATH:}$CRAFT_STAGE/usr/lib"
+    build-packages:
+      - autoconf
+      - automake
+      - libtool
+      - autotools-dev
+      - pkg-config
+      - libglib2.0-dev
+    stage-packages:
+      - libglib2.0-0
+    after: [cups, cpdb-libs, libcupsfilters, qpdf]
+
+  scripts:
+    plugin: dump
+    source: snap/local/
+    organize:
+      run-cpdb-backend-cups*: scripts/
+    prime:
+      - scripts/
+    after: [cpdb-backend-cups]

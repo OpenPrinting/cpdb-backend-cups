@@ -1,0 +1,12 @@
+#! /bin/sh
+
+#set -e -x
+
+export CPDB_LOCALEDIR=$SNAP_COMMON
+export CPDB_SYSCONFDIR=$SNAP/usr/etc
+export CPDB_BACKEND_INFO_DIR=$SNAP/usr/share/print-backends
+export CPDB_BACKEND_EXEC_DIR=$SNAP/usr/lib
+export CPDB_BACKEND_DIR=$SNAP/usr/lib
+export DBUS_SERVICES_DIR=$SNAP/usr/share/dbus-1/system-services
+
+exec $SNAP/usr/lib/print-backends/cups "$@"
