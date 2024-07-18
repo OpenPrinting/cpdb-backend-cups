@@ -49,7 +49,7 @@ char *get_default_printer(BackendObj *b)
     if (dest)
     {
         /** Return the user default printer */
-        char *def = cpdbGetStringCopy(dest->name);
+        char *def = g_strdup(dest->name);
         cupsFreeDests(num_dests, dests);
         b->default_printer = def;
         return def;
@@ -65,13 +65,13 @@ char *get_default_printer(BackendObj *b)
         if ((attr = ippFindAttribute(response, "printer-name",
                                      IPP_TAG_NAME)) != NULL)
         {
-            b->default_printer = cpdbGetStringCopy(ippGetString(attr, 0, NULL));
+            b->default_printer = g_strdup(ippGetString(attr, 0, NULL));
             ippDelete(response);
             return b->default_printer;
         }
     }
     ippDelete(response);
-    b->default_printer = cpdbGetStringCopy("NA");
+    b->default_printer = g_strdup("NA");
     return b->default_printer;
 }
 
@@ -92,7 +92,7 @@ void connect_to_dbus(BackendObj *b, char *obj_path)
 void add_frontend(BackendObj *b, const char *dialog_name)
 {
     Dialog *d = get_new_Dialog();
-    g_hash_table_insert(b->dialogs, cpdbGetStringCopy(dialog_name), d);
+    g_hash_table_insert(b->dialogs, g_strdup(dialog_name), d);
     b->num_frontends++;
 }
 
@@ -369,7 +369,7 @@ gboolean dialog_contains_printer(BackendObj *b, const char *dialog_name, const c
 
 PrinterCUPS *add_printer_to_dialog(BackendObj *b, const char *dialog_name, const cups_dest_t *dest)
 {
-    char *printer_name = cpdbGetStringCopy(dest->name);
+    char *printer_name = g_strdup(dest->name);
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (d == NULL)
     {
@@ -407,7 +407,7 @@ void send_printer_added_signal(BackendObj *b, const char *dialog_name, cups_dest
         logerror("Failed to send printer added signal.\n");
         return;
     }
-    char *printer_name = cpdbGetStringCopy(dest->name);
+    char *printer_name = g_strdup(dest->name);
     GVariant *gv = g_variant_new(CPDB_PRINTER_ADDED_ARGS,
                                  printer_name,                                   //id
                                  printer_name,                                   //name
@@ -645,9 +645,9 @@ char *get_orientation_default(PrinterCUPS *p)
         switch (def_value[0])
         {
         case '0':
-            return cpdbGetStringCopy("automatic-rotation");
+            return g_strdup("automatic-rotation");
         default:
-            return cpdbGetStringCopy(ippEnumString(CUPS_ORIENTATION, atoi(def_value)));
+            return g_strdup(ippEnumString(CUPS_ORIENTATION, atoi(def_value)));
         }
     }
     ensure_printer_connection(p);
@@ -655,12 +655,12 @@ char *get_orientation_default(PrinterCUPS *p)
 
     attr = cupsFindDestDefault(p->http, p->dest, p->dinfo, CUPS_ORIENTATION);
     if (!attr)
-        return cpdbGetStringCopy("NA");
+        return g_strdup("NA");
 
     const char *str = ippEnumString(CUPS_ORIENTATION, ippGetInteger(attr, 0));
     if (strcmp("0", str) == 0)
         str = "automatic-rotation";
-    return cpdbGetStringCopy(str);
+    return g_strdup(str);
 }
 
 int get_job_creation_attributes(PrinterCUPS *p, char ***values)
@@ -683,15 +683,15 @@ char *get_default(PrinterCUPS *p, char *option_name)
     if (def_value)
     {
         if (def_attr && (ippGetValueTag(def_attr) == IPP_TAG_ENUM))
-            return cpdbGetStringCopy(ippEnumString(option_name, atoi(def_value)));
+            return g_strdup(ippEnumString(option_name, atoi(def_value)));
 
-        return cpdbGetStringCopy(def_value);
+        return g_strdup(def_value);
     }
     if (def_attr)
     {
         return extract_ipp_attribute(def_attr, 0, option_name);
     }
-    return cpdbGetStringCopy("NA");
+    return g_strdup("NA");
 }
 /**************Option************************************/
 Option *get_NA_option()
@@ -746,14 +746,14 @@ void unpack_option_array(GVariant *var, int num_options, Option **options)
 
         g_variant_iter_loop(iter, "(ssia(s))", &name, &default_val,
                             &num_sup, &array_iter);
-        opt[i].option_name = cpdbGetStringCopy(name);
-        opt[i].default_value = cpdbGetStringCopy(default_val);
+        opt[i].option_name = g_strdup(name);
+        opt[i].default_value = g_strdup(default_val);
         opt[i].num_supported = num_sup;
         opt[i].supported_values = cpdbNewCStringArray(num_sup);
         for (j = 0; j < num_sup; j++)
         {
             g_variant_iter_loop(array_iter, "(s)", &str);
-            opt[i].supported_values[j] = cpdbGetStringCopy(str); //mem
+            opt[i].supported_values[j] = g_strdup(str); //mem
         }
         print_option(&opt[i]);
     }
@@ -800,7 +800,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     /** Add additional attributes to current option_names list **/
     option_names = realloc(option_names, sizeof(char *) * (num_options+sz)); 
     for (int i=0; i<sz; i++) 
-        option_names[num_options+i] = cpdbGetStringCopy(additional_options[i]);
+        option_names[num_options+i] = g_strdup(additional_options[i]);
     num_options += sz;
 
     int i, j, optsIndex = 0;                                         /**Looping variables **/
@@ -845,7 +845,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
             opts[optsIndex].supported_values[j] = extract_ipp_attribute(vals, j, option_names[i]);
             if (opts[optsIndex].supported_values[j] == NULL)
             {
-                opts[optsIndex].supported_values[j] = cpdbGetStringCopy("NA");
+                opts[optsIndex].supported_values[j] = g_strdup("NA");
             }
         }
 
@@ -853,235 +853,235 @@ int get_all_options(PrinterCUPS *p, Option **options)
         opts[optsIndex].default_value = get_default(p, option_names[i]);
         if (opts[optsIndex].default_value == NULL)
         {
-            opts[optsIndex].default_value = cpdbGetStringCopy("NA");
+            opts[optsIndex].default_value = g_strdup("NA");
         }
 
         optsIndex++;
     }
 
     /* Add the booklet option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("booklet");
+    opts[optsIndex].option_name = g_strdup("booklet");
     opts[optsIndex].num_supported = 3;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("off");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("on");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("shuffle-only");
+    opts[optsIndex].supported_values[0] = g_strdup("off");
+    opts[optsIndex].supported_values[1] = g_strdup("on");
+    opts[optsIndex].supported_values[2] = g_strdup("shuffle-only");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the ipp-attribute-fidelity option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("ipp-attribute-fidelity");
+    opts[optsIndex].option_name = g_strdup("ipp-attribute-fidelity");
     opts[optsIndex].num_supported = 2;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("off");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("on");
+    opts[optsIndex].supported_values[0] = g_strdup("off");
+    opts[optsIndex].supported_values[1] = g_strdup("on");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the job-sheets option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("job-sheets");
+    opts[optsIndex].option_name = g_strdup("job-sheets");
     opts[optsIndex].num_supported = 8;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("none");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("classified");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("confidential");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("form");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("secret");
-    opts[optsIndex].supported_values[5] = cpdbGetStringCopy("standard");
-    opts[optsIndex].supported_values[6] = cpdbGetStringCopy("topsecret");
-    opts[optsIndex].supported_values[7] = cpdbGetStringCopy("unclassified");
+    opts[optsIndex].supported_values[0] = g_strdup("none");
+    opts[optsIndex].supported_values[1] = g_strdup("classified");
+    opts[optsIndex].supported_values[2] = g_strdup("confidential");
+    opts[optsIndex].supported_values[3] = g_strdup("form");
+    opts[optsIndex].supported_values[4] = g_strdup("secret");
+    opts[optsIndex].supported_values[5] = g_strdup("standard");
+    opts[optsIndex].supported_values[6] = g_strdup("topsecret");
+    opts[optsIndex].supported_values[7] = g_strdup("unclassified");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy("none,none");
+        opts[optsIndex].default_value = g_strdup("none,none");
     }
     optsIndex++;
 
     /* Add the mirror option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("mirror");
+    opts[optsIndex].option_name = g_strdup("mirror");
     opts[optsIndex].num_supported = 2;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("off");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("on");
+    opts[optsIndex].supported_values[0] = g_strdup("off");
+    opts[optsIndex].supported_values[1] = g_strdup("on");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the multiple-document-handling option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("multiple-document-handling");
+    opts[optsIndex].option_name = g_strdup("multiple-document-handling");
     opts[optsIndex].num_supported = 2;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("separate-documents-uncollated-copies");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("separate-documents-collated-copies");
+    opts[optsIndex].supported_values[0] = g_strdup("separate-documents-uncollated-copies");
+    opts[optsIndex].supported_values[1] = g_strdup("separate-documents-collated-copies");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the number-up option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("number-up");
+    opts[optsIndex].option_name = g_strdup("number-up");
     opts[optsIndex].num_supported = 6;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("1");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("2");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("4");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("6");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("9");
-    opts[optsIndex].supported_values[5] = cpdbGetStringCopy("16");
+    opts[optsIndex].supported_values[0] = g_strdup("1");
+    opts[optsIndex].supported_values[1] = g_strdup("2");
+    opts[optsIndex].supported_values[2] = g_strdup("4");
+    opts[optsIndex].supported_values[3] = g_strdup("6");
+    opts[optsIndex].supported_values[4] = g_strdup("9");
+    opts[optsIndex].supported_values[5] = g_strdup("16");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the number-up-layout option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("number-up-layout");
+    opts[optsIndex].option_name = g_strdup("number-up-layout");
     opts[optsIndex].num_supported = 8;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("lrtb");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("lrbt");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("rltb");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("rlbt");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("tblr");
-    opts[optsIndex].supported_values[5] = cpdbGetStringCopy("tbrl");
-    opts[optsIndex].supported_values[6] = cpdbGetStringCopy("btlr");
-    opts[optsIndex].supported_values[7] = cpdbGetStringCopy("btrl");
+    opts[optsIndex].supported_values[0] = g_strdup("lrtb");
+    opts[optsIndex].supported_values[1] = g_strdup("lrbt");
+    opts[optsIndex].supported_values[2] = g_strdup("rltb");
+    opts[optsIndex].supported_values[3] = g_strdup("rlbt");
+    opts[optsIndex].supported_values[4] = g_strdup("tblr");
+    opts[optsIndex].supported_values[5] = g_strdup("tbrl");
+    opts[optsIndex].supported_values[6] = g_strdup("btlr");
+    opts[optsIndex].supported_values[7] = g_strdup("btrl");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the orientation-requested option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("orientation-requested");
+    opts[optsIndex].option_name = g_strdup("orientation-requested");
     opts[optsIndex].num_supported = 4;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("3");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("4");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("5");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("6");
+    opts[optsIndex].supported_values[0] = g_strdup("3");
+    opts[optsIndex].supported_values[1] = g_strdup("4");
+    opts[optsIndex].supported_values[2] = g_strdup("5");
+    opts[optsIndex].supported_values[3] = g_strdup("6");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     else
     {
         if (strcmp(opts[optsIndex].default_value, "potrait") == 0)
-            opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+            opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
         else if (strcmp(opts[optsIndex].default_value, "landscape") == 0)
-            opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[1]);
+            opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[1]);
         else if (strcmp(opts[optsIndex].default_value, "reverse-landscape") == 0)
-            opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[2]);
+            opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[2]);
         else if (strcmp(opts[optsIndex].default_value, "reverse-potrait") == 0)
-            opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[3]);
+            opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[3]);
         else
-            opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+            opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the page-border option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("page-border");
+    opts[optsIndex].option_name = g_strdup("page-border");
     opts[optsIndex].num_supported = 5;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("none");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("single");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("single-thick");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("double");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("double-thick");
+    opts[optsIndex].supported_values[0] = g_strdup("none");
+    opts[optsIndex].supported_values[1] = g_strdup("single");
+    opts[optsIndex].supported_values[2] = g_strdup("single-thick");
+    opts[optsIndex].supported_values[3] = g_strdup("double");
+    opts[optsIndex].supported_values[4] = g_strdup("double-thick");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the page-delivery option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("page-delivery");
+    opts[optsIndex].option_name = g_strdup("page-delivery");
     opts[optsIndex].num_supported = 2;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("same-order");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("reverse-order");
+    opts[optsIndex].supported_values[0] = g_strdup("same-order");
+    opts[optsIndex].supported_values[1] = g_strdup("reverse-order");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the page-set option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("page-set");
+    opts[optsIndex].option_name = g_strdup("page-set");
     opts[optsIndex].num_supported = 3;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("all");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("even");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("odd");
+    opts[optsIndex].supported_values[0] = g_strdup("all");
+    opts[optsIndex].supported_values[1] = g_strdup("even");
+    opts[optsIndex].supported_values[2] = g_strdup("odd");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the position option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("position");
+    opts[optsIndex].option_name = g_strdup("position");
     opts[optsIndex].num_supported = 9;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("center");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("top");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("bottom");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("left");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("right");
-    opts[optsIndex].supported_values[5] = cpdbGetStringCopy("top-left");
-    opts[optsIndex].supported_values[6] = cpdbGetStringCopy("top-right");
-    opts[optsIndex].supported_values[7] = cpdbGetStringCopy("bottom-left");
-    opts[optsIndex].supported_values[8] = cpdbGetStringCopy("bottom-right");
+    opts[optsIndex].supported_values[0] = g_strdup("center");
+    opts[optsIndex].supported_values[1] = g_strdup("top");
+    opts[optsIndex].supported_values[2] = g_strdup("bottom");
+    opts[optsIndex].supported_values[3] = g_strdup("left");
+    opts[optsIndex].supported_values[4] = g_strdup("right");
+    opts[optsIndex].supported_values[5] = g_strdup("top-left");
+    opts[optsIndex].supported_values[6] = g_strdup("top-right");
+    opts[optsIndex].supported_values[7] = g_strdup("bottom-left");
+    opts[optsIndex].supported_values[8] = g_strdup("bottom-right");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the print-scaling option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("print-scaling");
+    opts[optsIndex].option_name = g_strdup("print-scaling");
     opts[optsIndex].num_supported = 5;
     opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
-    opts[optsIndex].supported_values[0] = cpdbGetStringCopy("auto");
-    opts[optsIndex].supported_values[1] = cpdbGetStringCopy("auto-fit");
-    opts[optsIndex].supported_values[2] = cpdbGetStringCopy("fill");
-    opts[optsIndex].supported_values[3] = cpdbGetStringCopy("fit");
-    opts[optsIndex].supported_values[4] = cpdbGetStringCopy("none");
+    opts[optsIndex].supported_values[0] = g_strdup("auto");
+    opts[optsIndex].supported_values[1] = g_strdup("auto-fit");
+    opts[optsIndex].supported_values[2] = g_strdup("fill");
+    opts[optsIndex].supported_values[3] = g_strdup("fit");
+    opts[optsIndex].supported_values[4] = g_strdup("none");
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy(opts[optsIndex].supported_values[0]);
+        opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
 
     /* Add the billing-info option */
-    opts[optsIndex].option_name = cpdbGetStringCopy("billing-info");
+    opts[optsIndex].option_name = g_strdup("billing-info");
     opts[optsIndex].num_supported = 0;
     opts[optsIndex].supported_values = NULL;
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy("");
+        opts[optsIndex].default_value = g_strdup("");
     }
     optsIndex++;
 
@@ -1095,19 +1095,19 @@ int get_all_options(PrinterCUPS *p, Option **options)
                 if (strcasecmp(opts[i].supported_values[j], "draft") == 0)
                 {
                     free(opts[i].supported_values[j]);
-                    opts[i].supported_values[j] = cpdbGetStringCopy("3");
+                    opts[i].supported_values[j] = g_strdup("3");
                     continue;
                 }
                 if (strcasecmp(opts[i].supported_values[j], "normal") == 0)
                 {
                     free(opts[i].supported_values[j]);
-                    opts[i].supported_values[j] = cpdbGetStringCopy("4");
+                    opts[i].supported_values[j] = g_strdup("4");
                     continue;
                 }
                 if (strcasecmp(opts[i].supported_values[j], "high") == 0)
                 {
                     free(opts[i].supported_values[j]);
-                    opts[i].supported_values[j] = cpdbGetStringCopy("5");
+                    opts[i].supported_values[j] = g_strdup("5");
                     continue;
                 }
             }
@@ -1115,19 +1115,19 @@ int get_all_options(PrinterCUPS *p, Option **options)
             if (strcasecmp(opts[i].default_value, "draft") == 0)
             {
                 free(opts[i].default_value);
-                opts[i].default_value = cpdbGetStringCopy("3");
+                opts[i].default_value = g_strdup("3");
                 continue;
             }
             if (strcasecmp(opts[i].default_value, "normal") == 0)
             {
                 free(opts[i].default_value);
-                opts[i].default_value = cpdbGetStringCopy("4");
+                opts[i].default_value = g_strdup("4");
                 continue;
             }
             if (strcasecmp(opts[i].default_value, "high") == 0)
             {
                 free(opts[i].default_value);
-                opts[i].default_value = cpdbGetStringCopy("5");
+                opts[i].default_value = g_strdup("5");
                 continue;
             }
 
@@ -1238,7 +1238,7 @@ int get_all_media(PrinterCUPS *p, Media **medias)
 			margins = (GList *) value;
             margins = g_list_reverse(margins);
             
-            meds[i].name = cpdbGetStringCopy(name);
+            meds[i].name = g_strdup(name);
             meds[i].width = pwg_media->width;
             meds[i].length = pwg_media->length;
             meds[i].num_margins = g_list_length(margins);
@@ -1289,18 +1289,18 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     opts = realloc(opts, sizeof(Option) * count);
     
      /* Add the media option */
-	opts[optsIndex].option_name = cpdbGetStringCopy("media");
+    opts[optsIndex].option_name = g_strdup("media");
 	opts[optsIndex].num_supported = media_count;
 	opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported + 2);	/** 2 extra for custom_min and custom_max sizes **/
 	for (i = 0; i < opts[optsIndex].num_supported; i++)
     {
-		opts[optsIndex].supported_values[i] = cpdbGetStringCopy(medias[i].name);
+        opts[optsIndex].supported_values[i] = g_strdup(medias[i].name);
     }
 
     opts[optsIndex].default_value = get_default(p, "media");
     if (opts[optsIndex].default_value == NULL)
     {
-        opts[optsIndex].default_value = cpdbGetStringCopy("NA");
+        opts[optsIndex].default_value = g_strdup("NA");
     }
     
     /** Add custom_min and custom_max media if they exist **/
@@ -1319,7 +1319,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 		
 		if (strncmp(media_name, "custom_min", 10) == 0 || strncmp(media_name, "custom_max", 10) == 0)
 		{
-			opts[optsIndex].supported_values[i] = cpdbGetStringCopy(media_name);
+            opts[optsIndex].supported_values[i] = g_strdup(media_name);
 			i++;
 		}
 		
@@ -1338,7 +1338,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     for (i = 0; i < 4; i++) // for each attr in attrs
     {
         vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, attrs[i]);
-        opts[optsIndex].option_name = cpdbGetStringCopy(attrs[i]);
+        opts[optsIndex].option_name = g_strdup(attrs[i]);
         if (vals)
             opts[optsIndex].num_supported = ippGetCount(vals);
         else
@@ -1350,7 +1350,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
             opts[optsIndex].supported_values[j] = extract_ipp_attribute(vals, j, attrs[i]);
             if (opts[optsIndex].supported_values[j] == NULL)
             {
-                opts[optsIndex].supported_values[j] = cpdbGetStringCopy("NA");
+                opts[optsIndex].supported_values[j] = g_strdup("NA");
             }
         }
 
@@ -1358,10 +1358,10 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
         attr = ippFindAttribute(media_col, attrs[i], IPP_TAG_INTEGER);
         snprintf(def, 16, "%d", ippGetInteger(attr, 0));
 
-        opts[optsIndex].default_value = cpdbGetStringCopy(def);
+        opts[optsIndex].default_value = g_strdup(def);
         if (opts[optsIndex].default_value == NULL)
         {
-            opts[optsIndex].default_value = cpdbGetStringCopy("NA");
+            opts[optsIndex].default_value = g_strdup("NA");
         }
 
         optsIndex++;
@@ -1630,7 +1630,7 @@ void cups_get_Resolution(cups_dest_t *dest, int *xres, int *yres)
 int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
 {
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = cpdbGetStringCopy(dest->name);
+    char *printername = g_strdup(dest->name);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);
@@ -1642,7 +1642,7 @@ int add_printer_to_ht_no_temp(void *user_data, unsigned flags, cups_dest_t *dest
     if (cups_is_temporary(dest))
         return 1;
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = cpdbGetStringCopy(dest->name);
+    char *printername = g_strdup(dest->name);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);
@@ -1654,7 +1654,7 @@ int add_printer_to_ht_no_remote(void *user_data, unsigned flags, cups_dest_t *de
     if (cups_is_remote(dest))
         return 1;
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = cpdbGetStringCopy(dest->name);
+    char *printername = g_strdup(dest->name);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);
@@ -1723,12 +1723,12 @@ char *cups_retrieve_string(cups_dest_t *dest, const char *option_name)
     g_assert_nonnull(dest);
     g_assert_nonnull(option_name);
     char *ans = NULL;
-    ans = cpdbGetStringCopy(cupsGetOption(option_name, dest->num_options, dest->options));
+    ans = g_strdup(cupsGetOption(option_name, dest->num_options, dest->options));
 
     if (ans)
         return ans;
 
-    return cpdbGetStringCopy("NA");
+    return g_strdup("NA");
 }
 
 gboolean cups_is_temporary(cups_dest_t *dest)
@@ -1964,19 +1964,19 @@ char *extract_res_from_ipp(ipp_attribute_t *attr, int index)
     else
         snprintf(buf, sizeof(buf), "%dx%d%s", xres, yres, unit);
 
-    return cpdbGetStringCopy(buf);
+    return g_strdup(buf);
 }
 
 char *extract_string_from_ipp(ipp_attribute_t *attr, int index)
 {
-    return cpdbGetStringCopy(ippGetString(attr, index, NULL));
+    return g_strdup(ippGetString(attr, index, NULL));
 }
 
 char *extract_orientation_from_ipp(ipp_attribute_t *attr, int index)
 {
-    char *str = cpdbGetStringCopy(ippEnumString(CUPS_ORIENTATION, ippGetInteger(attr, index)));
+    char *str = g_strdup(ippEnumString(CUPS_ORIENTATION, ippGetInteger(attr, index)));
     if (strcmp("0", str) == 0)
-        str = cpdbGetStringCopy("automatic-rotation");
+        str = g_strdup("automatic-rotation");
     return str;
 }
 
@@ -2016,7 +2016,7 @@ char *get_option_translation(PrinterCUPS *p,
     {
         /* request failed */
         logerror("Request failed: %s\n", cupsLastErrorString());
-        return cpdbGetStringCopy(option_name);
+        return g_strdup(option_name);
     }
 
     opts_catalog = cfCatalogOptionArrayNew();
@@ -2030,7 +2030,7 @@ char *get_option_translation(PrinterCUPS *p,
 
     translation = cfCatalogLookUpOption((char *)option_name, 
                                         opts_catalog, printer_opts_catalog);
-    copy = cpdbGetStringCopy(translation);
+    copy = g_strdup(translation);
     cupsArrayDelete(opts_catalog);
     cupsArrayDelete(printer_opts_catalog);
     return copy;
@@ -2062,7 +2062,7 @@ char *get_choice_translation(PrinterCUPS *p,
     {
         /* request failed */
         logerror("Request failed: %s\n", cupsLastErrorString());
-        return cpdbGetStringCopy(choice_name);
+        return g_strdup(choice_name);
     }
 
     opts_catalog = cfCatalogOptionArrayNew();
@@ -2076,7 +2076,7 @@ char *get_choice_translation(PrinterCUPS *p,
 
     translation = cfCatalogLookUpChoice((char *)choice_name, (char *)option_name,
                                         opts_catalog, printer_opts_catalog);
-    copy = cpdbGetStringCopy(translation);
+    copy = g_strdup(translation);
     cupsArrayDelete(opts_catalog);
     cupsArrayDelete(printer_opts_catalog);
     return copy;

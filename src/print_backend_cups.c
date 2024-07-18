@@ -443,7 +443,7 @@ static gboolean on_handle_get_option_translation(PrintBackend *interface,
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
     char *translation = get_option_translation(p, option_name, locale);
     if (translation == NULL)
-        translation = cpdbGetStringCopy(option_name);
+        translation = g_strdup(option_name);
     print_backend_complete_get_option_translation(interface, invocation, translation);
     return TRUE;
 }
@@ -461,7 +461,7 @@ static gboolean on_handle_get_choice_translation(PrintBackend *interface,
     char *translation = get_choice_translation(p, option_name,
                                                 choice_name, locale);
     if (translation == NULL)
-        translation = cpdbGetStringCopy(choice_name);
+        translation = g_strdup(choice_name);
     print_backend_complete_get_choice_translation(interface, invocation, translation);
     return TRUE;
 }
@@ -582,7 +582,7 @@ static gboolean on_handle_replace(PrintBackend *interface,
     if (d != NULL)
     {
         g_hash_table_steal(b->dialogs, previous_name);
-        g_hash_table_insert(b->dialogs, cpdbGetStringCopy(dialog_name), d);
+        g_hash_table_insert(b->dialogs, g_strdup(dialog_name), d);
         g_message("Replaced %s --> %s\n", previous_name, dialog_name);
     }
     print_backend_complete_replace(interface, invocation);
