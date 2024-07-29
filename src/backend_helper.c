@@ -35,12 +35,6 @@ BackendObj *get_new_BackendObj()
 /** Don't free the returned value; it is owned by BackendObj */
 char *get_default_printer(BackendObj *b)
 {
-    /** If it was  previously querie, don't query again */
-    if (b->default_printer)
-    {
-        return b->default_printer;
-    }
-
     /**first query to see if the user default printer is set**/
     int num_dests;
     cups_dest_t *dests;
@@ -51,6 +45,7 @@ char *get_default_printer(BackendObj *b)
         /** Return the user default printer */
         char *def = g_strdup(dest->name);
         cupsFreeDests(num_dests, dests);
+        g_free(b->default_printer);
         b->default_printer = def;
         return def;
     }
@@ -65,12 +60,14 @@ char *get_default_printer(BackendObj *b)
         if ((attr = ippFindAttribute(response, "printer-name",
                                      IPP_TAG_NAME)) != NULL)
         {
+            g_free(b->default_printer);
             b->default_printer = g_strdup(ippGetString(attr, 0, NULL));
             ippDelete(response);
             return b->default_printer;
         }
     }
     ippDelete(response);
+    g_free(b->default_printer);
     b->default_printer = g_strdup("NA");
     return b->default_printer;
 }
