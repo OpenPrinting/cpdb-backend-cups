@@ -206,9 +206,11 @@ static gboolean on_handle_get_all_printers(PrintBackend *interface,
         accepting_jobs = cups_is_accepting_jobs(dest);
         state = cups_printer_state(dest);
         add_printer_to_dialog(b, dialog_name, dest);
-        printer = g_variant_new(CPDB_PRINTER_ARGS, dest->name, dest->name, info,
+        char *printer_name = get_printer_name_for_cups_dest(dest);
+        printer = g_variant_new(CPDB_PRINTER_ARGS, printer_name, printer_name, info,
                                 location, make, accepting_jobs, state, BACKEND_NAME);
         g_variant_builder_add(&builder, "(v)", printer);
+        g_free(printer_name);
         free(key);
         cupsFreeDests(1, value);
         free(info);
@@ -262,9 +264,11 @@ static gboolean on_handle_get_filtered_printer_list(PrintBackend *interface,
         accepting_jobs = cups_is_accepting_jobs(dest);
         state = cups_printer_state(dest);
         add_printer_to_dialog(b, dialog_name, dest);
-        printer = g_variant_new(CPDB_PRINTER_ARGS, dest->name, dest->name, info,
+        char *printer_name = get_printer_name_for_cups_dest(dest);
+        printer = g_variant_new(CPDB_PRINTER_ARGS, printer_name, printer_name, info,
                                 location, make, accepting_jobs, state, BACKEND_NAME);
         g_variant_builder_add(&builder, "(v)", printer);
+        g_free(printer_name);
         free(key);
         cupsFreeDests(1, value);
         free(info);
@@ -318,7 +322,7 @@ int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
 {
 
     const char *dialog_name = (const char *)_dialog_name;
-    char *printer_name = dest->name;
+    char *printer_name = get_printer_name_for_cups_dest(dest);
 
     if (dialog_contains_printer(b, dialog_name, printer_name))
     {
@@ -329,6 +333,8 @@ int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
     add_printer_to_dialog(b, dialog_name, dest);
     send_printer_added_signal(b, dialog_name, dest);
     g_message("     Sent notification for printer %s\n", printer_name);
+
+    g_free(printer_name);
 
     /** dest will be automatically freed later. 
      * Don't explicitly free it

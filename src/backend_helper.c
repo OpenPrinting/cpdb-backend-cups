@@ -16,6 +16,17 @@ static unsigned int HttpLocalTimeout = 5;
 
 Mappings *map;
 
+char *get_printer_name_for_cups_dest(const cups_dest_t *dest)
+{
+    if (!dest)
+        return NULL;
+
+    if (dest->instance)
+        return g_strconcat(dest->name, "/", dest->instance, NULL);
+
+    return g_strdup(dest->name);
+}
+
 /*****************BackendObj********************************/
 BackendObj *get_new_BackendObj()
 {
@@ -49,7 +60,7 @@ char *get_default_printer(BackendObj *b)
     if (dest)
     {
         /** Return the user default printer */
-        char *def = g_strdup(dest->name);
+        char *def = get_printer_name_for_cups_dest(dest);
         cupsFreeDests(num_dests, dests);
         b->default_printer = def;
         return def;
@@ -369,7 +380,7 @@ gboolean dialog_contains_printer(BackendObj *b, const char *dialog_name, const c
 
 PrinterCUPS *add_printer_to_dialog(BackendObj *b, const char *dialog_name, const cups_dest_t *dest)
 {
-    char *printer_name = g_strdup(dest->name);
+    char *printer_name = get_printer_name_for_cups_dest(dest);
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (d == NULL)
     {
@@ -407,7 +418,7 @@ void send_printer_added_signal(BackendObj *b, const char *dialog_name, cups_dest
         logerror("Failed to send printer added signal.\n");
         return;
     }
-    char *printer_name = g_strdup(dest->name);
+    char *printer_name = get_printer_name_for_cups_dest(dest);
     GVariant *gv = g_variant_new(CPDB_PRINTER_ADDED_ARGS,
                                  printer_name,                                   //id
                                  printer_name,                                   //name
@@ -569,7 +580,7 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
         return NULL;
     }
     p->dest = dest_copy;
-    p->name = dest_copy->name;
+    p->name = get_printer_name_for_cups_dest(dest_copy);
     p->http = NULL;
     p->dinfo = NULL;
     p->stream_socket_path = NULL;
@@ -581,6 +592,7 @@ void free_PrinterCUPS(PrinterCUPS *p)
 {
     logdebug("Freeing printerCUPS \n");
     cupsFreeDests(1, p->dest);
+    g_free(p->name);
     if (p->dinfo)
     {
         cupsFreeDestInfo(p->dinfo);
@@ -1630,7 +1642,7 @@ void cups_get_Resolution(cups_dest_t *dest, int *xres, int *yres)
 int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
 {
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = g_strdup(dest->name);
+    char *printername = get_printer_name_for_cups_dest(dest);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);
@@ -1642,7 +1654,7 @@ int add_printer_to_ht_no_temp(void *user_data, unsigned flags, cups_dest_t *dest
     if (cups_is_temporary(dest))
         return 1;
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = g_strdup(dest->name);
+    char *printername = get_printer_name_for_cups_dest(dest);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);
@@ -1654,7 +1666,7 @@ int add_printer_to_ht_no_remote(void *user_data, unsigned flags, cups_dest_t *de
     if (cups_is_remote(dest))
         return 1;
     GHashTable *h = (GHashTable *)user_data;
-    char *printername = g_strdup(dest->name);
+    char *printername = get_printer_name_for_cups_dest(dest);
     cups_dest_t *dest_copy = NULL;
     cupsCopyDest(dest, 0, &dest_copy);
     g_hash_table_insert(h, printername, dest_copy);

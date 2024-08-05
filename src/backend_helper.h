@@ -117,6 +117,11 @@ typedef struct _AddressList {
 
 /********Backend related functions*******************/
 
+/** Get a printer name for a CUPS destination.
+ * This takes into account the destinations instance name, if any.
+ */
+char *get_printer_name_for_cups_dest(const cups_dest_t *dest);
+
 /** Get a new BackendObj **/
 BackendObj *get_new_BackendObj();
 
