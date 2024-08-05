@@ -79,7 +79,7 @@ char *get_default_printer(BackendObj *b)
     }
     ippDelete(response);
     g_free(b->default_printer);
-    b->default_printer = g_strdup("NA");
+    b->default_printer = NULL;
     return b->default_printer;
 }
 
