@@ -2,7 +2,7 @@
 # Process this file with autoconf to produce a configure script.
 
 AC_PREREQ([2.69])
-AC_INIT([cpdb-backend-cups], [2.0b6], [https://github.com/OpenPrinting/cpdb-backend-cups/issues/], [cpdb-backend-cups], [https://github.com/OpenPrinting/cpdb-backend-cups])
+AC_INIT([cpdb-backend-cups], [2.0b7], [https://github.com/OpenPrinting/cpdb-backend-cups/issues/], [cpdb-backend-cups], [https://github.com/OpenPrinting/cpdb-backend-cups])
 AC_CONFIG_AUX_DIR([build-aux])
 AC_CONFIG_SRCDIR([src/print_backend_cups.c])
 AM_INIT_AUTOMAKE([-Wall dist-xz dist-bzip2 foreign])

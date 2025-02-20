@@ -1,4 +1,34 @@
-# CHANGES - Common Print Dialog Backends - CUPS Backend - v2.0b6 - 2024-06-18
+# CHANGES - Common Print Dialog Backends - CUPS Backend - v2.0b7 - 2025-02-20
+
+## CHANGES IN V2.0b7 (20th February 2025)
+
+- Add support for CUPS printer instances
+  Don't just always use the `cups_dest_t`'s `name` for the printer
+  name, but also take it's `instance` member into account and if
+  present, append that for the name used for the CPDB printer name,
+  separated by a slash character (Pull request #34).
+
+- Always query current CUPS default printer
+  When asked for the default printer, always query and return the
+  current CUPS default printer instead of whatever was the default
+  last time this was done, to take into account that the CUPS default
+  printer can change while the backend is running (Pull request #33).
+
+- Pass correct parameters to `cupsStartDestDocument()`
+  Now job title and job attributes (options) are correctly passed on
+  (Pull request #36).
+
+- Use NULL Instead of "NA" if there's no default printer
+  NULL makes clear that there's no default printer, while "NA" could
+  even be the name of an actual printer, so use the former instead of
+  the latter if no default printer could be determined (Pull request
+  #35).
+
+- Use `g_strdup` instead of `cpdbGetStringCopy`
+  GLib's `g_strdup` already provides the same functionality as
+  `cpdbGetStringCopy` from cpdb-libs, so use the former instead of
+  relying on a custom CPDB implementation (Pull request #32).
+
 
 ## CHANGES IN V2.0b6 (18th June 2024)
 
