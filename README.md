@@ -48,3 +48,5 @@ NOTE: The communication protocol between frontends and backends has changed (Job
 - [Nilanjana Lodh's Google Summer of Code 2017 Final Report](https://nilanjanalodh.github.io/common-print-dialog-gsoc17/)
 
 - [Gaurav Guleria's Google Summer of Code 2022 Final Report](https://github.com/TinyTrebuchet/gsoc22/)
+
+- [Shivam Sharma's Google Summer of Code 2024 Final Report](https://github.com/shivamsharma2509/GSOC24)
