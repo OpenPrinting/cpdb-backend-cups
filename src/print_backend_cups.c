@@ -17,7 +17,7 @@ static void
 on_name_acquired(GDBusConnection *connection,
                  const gchar *name,
                  gpointer not_used);
-static void acquire_session_bus_name();
+static void acquire_session_bus_name(char *bus_name);
 gpointer list_printers(gpointer _dialog_name);
 int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest);
 void connect_to_signals();
