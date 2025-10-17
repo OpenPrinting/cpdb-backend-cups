@@ -20,6 +20,7 @@ cups_SOURCES = \
 	print_backend_cups.c \
 	backend_helper.c backend_helper.h \
 	cups-notifier.c cups-notifier.h
+	Auth.c auth.h
 cups_CPPFLAGS  = $(CPDB_CFLAGS)
 cups_CPPFLAGS += $(LIBCUPSFILTERS_CFLAGS)
 cups_CPPFLAGS += $(GLIB_CFLAGS)
@@ -32,6 +33,7 @@ cups_LDADD += $(LIBCUPSFILTERS_LIBS)
 cups_LDADD += $(GLIB_LIBS)
 cups_LDADD += $(GIO_LIBS)
 cups_LDADD += $(GIOUNIX_LIBS)
+cups_LDADD += -lcurl -ljson-c
 
 # ================================
 # Tests ("make test"/"make check")
