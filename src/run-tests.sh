@@ -115,7 +115,7 @@ clean_up()
     # Remove test bed directories
     #
 
-    return
+    #return
     if test -n "$BASE"; then
 	rm -rf $BASE
     fi
