@@ -1,7 +1,6 @@
 #!/bin/sh
 #
-# Perform testing of automatic print queue generation and removal by
-# cups-browsed
+# Perform testing of printing via CPDB and the CPDB CUPS backend
 #
 # Copyright © 2020-2023 by OpenPrinting
 # Copyright © 2007-2021 by Apple Inc.
@@ -116,7 +115,7 @@ clean_up()
     # Remove test bed directories
     #
 
-    #return
+    return
     if test -n "$BASE"; then
 	rm -rf $BASE
     fi
@@ -340,7 +339,6 @@ EOF
 
 cat >$BASE/cups-files.conf <<EOF
 FileDevice yes
-Printcap
 User $USER
 ServerRoot $BASE
 StateDir $BASE
@@ -468,6 +466,23 @@ export LANG
 
 LC_MESSAGES=C
 export LC_MESSAGES
+
+#
+# Check syntax of CUPS config files...
+#
+
+echo "Testing CUPS config files:"
+echo "    $runcups $BASE/bin/cupsd -t -s $BASE/cups-files.conf"
+echo ""
+
+$runcups $BASE/bin/cupsd -t -s $BASE/cups-files.conf
+
+echo "    $runcups $BASE/bin/cupsd -t -c $BASE/cupsd.conf"
+echo ""
+
+$runcups $BASE/bin/cupsd -t -c $BASE/cupsd.conf
+
+echo ""
 
 #
 # Start the CUPS server; run as foreground daemon in the background...
