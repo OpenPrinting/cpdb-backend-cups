@@ -1,3 +1,9 @@
+#define GOA_API_IS_SUBJECT_TO_CHANGE
+
+#include "auth.h"
+#include <goa/goa.h>
+#include <gtk/gtk.h>
+
 #include <stdio.h>
 #include <stdlib.h>
 #include <glib.h>
@@ -496,6 +502,25 @@ static gboolean on_handle_ping(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean send_print_job_with_token(PrinterCUPS *printer,
+                                        const gchar *printer_id,
+                                        int num_settings,
+                                        GVariant *settings,
+                                        const gchar *title,
+                                        const char *access_token,
+                                        char *jobid_out,
+                                        char *socket_out)
+{
+    if(!access_token){
+       g_warning("No access token available. Authentication is required.");
+       return FALSE;
+    }
+    
+    print_socket(printer, num_settings, settings, jobid_out, socket_out, title);
+    g_message("Print job sent successfully.");
+    
+    return TRUE;
+}
 static gboolean on_handle_print_socket(PrintBackend *interface,
                                      GDBusMethodInvocation *invocation,
                                      const gchar *printer_id,
@@ -506,17 +531,40 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
 {
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
+    
+    if(!p){
+      g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+      return FALSE;
+    }
+    
+    /* Call OAuth function to retrieve access token */
+    char *access_token = get_access_token();
+    if(!access_token){
+      g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Authentication required");
+      return FALSE;
+    }
 
     // Call the renamed function
     char jobid[32];
     char socket[256];
     print_socket(p, num_settings, settings, jobid, socket, title);
+    
+    gboolean success = send_print_job_with_token(p, printer_id, num_settings, settings, title, access_token, jobid, socket);
+    if(!success){
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Failed to send print job.");
+        g_free(access_token);
+        return FALSE;
+    }
 
     // Complete the D-Bus method call with the result
     print_backend_complete_print_socket(interface, invocation, jobid, socket);
+    
+    //Free access token if dynamically allocated
+    g_free(access_token);
 
     return TRUE;
 }
+
 
 static gboolean on_handle_get_all_options(PrintBackend *interface,
                                           GDBusMethodInvocation *invocation,
