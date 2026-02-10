@@ -1,0 +1,62 @@
+name: "CodeQL"
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+    branches: [master]
+  schedule:
+    - cron: '0 7 * * 6'
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+
+    strategy:
+      fail-fast: false
+      matrix:
+        language: ['cpp']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+        with:
+          submodules: recursive
+
+      - name: Update build environment
+        run: sudo apt-get update --fix-missing -y
+      - name: install prerequisites
+        run: |
+         sudo apt-get install cups libcups2-dev libglib2.0-dev autoconf autopoint libdbus-1-dev libtool -y
+      - name: Install cpdb-libs Version >= 2.0.0
+        run: |
+            cd ..
+            mkdir cpdb-libs
+            wget https://github.com/OpenPrinting/cpdb-libs/releases/download/2.0b8/cpdb-libs-2.0b8.tar.gz
+            tar -xzf cpdb-libs-2.0b8.tar.gz
+            cd cpdb-libs-2.0b8
+            ./autogen.sh
+            ./configure --prefix=/usr --enable-shared
+            make all
+            sudo make install
+            cd ..
+            cd ..      
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v4
+        with:
+          languages: ${{ matrix.language }}
+          # config-file: ./.github/codeql.yml
+          queries: +security-and-quality
+
+      - name: Autobuild
+        uses: github/codeql-action/autobuild@v4
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v4
+        with:
+          category: "/language:${{ matrix.language }}"
