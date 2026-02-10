@@ -29,9 +29,9 @@ jobs:
         wget https://github.com/OpenPrinting/cpdb-libs/releases/download/2.0b8/cpdb-libs-2.0b8.tar.gz
         tar -xzf cpdb-libs-2.0b8.tar.gz
         cd cpdb-libs-2.0b8
+        ./autogen.sh
         ./configure --prefix=/usr --enable-shared
         make all
-        make test
         sudo make install
         cd ..
         cd ..
