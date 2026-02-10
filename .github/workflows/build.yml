@@ -41,5 +41,5 @@ jobs:
       run: ./autogen.sh && ./configure --enable-debug
     - name: make
       run: make
-    # - name: Run Tests
-    #   run: make check || cat test/error_log*
+    - name: Run Tests
+      run: make check || cat test/error_log*
