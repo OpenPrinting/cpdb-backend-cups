@@ -57,8 +57,8 @@ jobs:
     #     uses: github/codeql-action/autobuild@v4
       - name: Build 
        
-        run: ./autogen.sh && ./configure --enable-debug
-             make
+        run: |
+            ./autogen.sh && ./configure --enable-debug && make
       - name: Perform CodeQL Analysis
         uses: github/codeql-action/analyze@v4
         with:
