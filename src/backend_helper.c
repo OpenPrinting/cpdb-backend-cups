@@ -14,6 +14,8 @@
 static http_t *system_conn = NULL;
 static unsigned int HttpLocalTimeout = 5;
 
+static void *print_data_thread(void *data);
+
 Mappings *map;
 
 char *get_printer_name_for_cups_dest(const cups_dest_t *dest)
@@ -1406,7 +1408,6 @@ const char *get_printer_state(PrinterCUPS *p)
     if ((attr = ippFindAttribute(response, "printer-state",
                                  IPP_TAG_ENUM)) != NULL)
     {
-
         logdebug("printer-state=%d\n", ippGetInteger(attr, 0));
         str = map->state[ippGetInteger(attr, 0)];
     }
@@ -1507,7 +1508,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
 
 }
 
-void *print_data_thread(void *data) {
+static void *print_data_thread(void *data) {
     PrintDataThreadData *thread_data = (PrintDataThreadData *)data;
 
     // Allocate dynamic memory for the buffer within the thread
