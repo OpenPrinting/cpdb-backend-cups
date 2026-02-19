@@ -1381,7 +1381,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 }
 const char *get_printer_state(PrinterCUPS *p)
 {
-    const char *str;
+    const char *str = NULL;
     ensure_printer_connection(p);
     ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     const char *uri = cupsGetOption("printer-uri-supported",
@@ -1617,8 +1617,8 @@ void cups_get_Resolution(cups_dest_t *dest, int *xres, int *yres)
     cups_dinfo_t *dinfo = cupsCopyDestInfo(http, dest);
     g_assert_nonnull(dinfo);
     ipp_attribute_t *attr = cupsFindDestDefault(http, dest, dinfo, "printer-resolution");
-    ipp_res_t *units;
-    *xres = ippGetResolution(attr, 0, yres, units);
+    ipp_res_t units;
+    *xres = ippGetResolution(attr, 0, yres, &units);
 }
 
 int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
@@ -2017,10 +2017,10 @@ char *get_option_translation(PrinterCUPS *p,
 
     opts_catalog = cfCatalogOptionArrayNew();
     cfCatalogLoad(NULL, locale, opts_catalog);
+    printer_opts_catalog = cfCatalogOptionArrayNew();
     if ((attr = ippFindAttribute(response, "printer-strings-uri",
                                     IPP_TAG_URI)) != NULL)
     {
-        printer_opts_catalog = cfCatalogOptionArrayNew();
         cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
     }
 
@@ -2063,10 +2063,10 @@ char *get_choice_translation(PrinterCUPS *p,
 
     opts_catalog = cfCatalogOptionArrayNew();
     cfCatalogLoad(NULL, locale, opts_catalog);
+    printer_opts_catalog = cfCatalogOptionArrayNew();
     if ((attr = ippFindAttribute(response, "printer-strings-uri",
                                     IPP_TAG_URI)) != NULL)
     {
-        printer_opts_catalog = cfCatalogOptionArrayNew();
         cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
     }
 
