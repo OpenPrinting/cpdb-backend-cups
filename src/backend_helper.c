@@ -1288,10 +1288,8 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     int i, j;							/** Looping variables **/
     int num_media;						/** Variable for number of "media" supported using CUPS call **/
     char *media_name;					/** Variable for media name **/
-    int width, length;					/** Variable for media width and media length **/
     int optsIndex = count;				/** Index for fillings options **/
-    pwg_media_t *pwg_media;	
-    ipp_t *media_col, *media_size;		/** media_col and media_size collections in IPP request **/
+    ipp_t *media_col;				/** media_col collection in IPP request **/
     ipp_attribute_t *vals, *default_val, *attr;
 
     count += 5;	/** "media", "media-{top, bottom, left, right}-margins" **/
