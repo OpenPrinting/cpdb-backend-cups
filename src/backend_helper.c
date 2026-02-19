@@ -1553,20 +1553,6 @@ void printAllJobs(PrinterCUPS *p)
         print_job(&jobs[i]);
     }
 }
-static void list_group(ppd_file_t *ppd,    /* I - PPD file */
-                       ppd_group_t *group) /* I - Group to show */
-{
-    logdebug("List group %s\n", group->name);
-    /** Now iterate through the options in the particular group*/
-    logdebug("It has %d options.\n", group->num_options);
-    logdebug("Listing all of them ..\n");
-    int i;
-    for (i = 0; i < group->num_options; i++)
-    {
-        logdebug("    Option %d : %s\n", i, group->options[i].keyword);
-    }
-}
-
 
 /**********Dialog related funtions ****************/
 Dialog *get_new_Dialog()
