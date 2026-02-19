@@ -1935,8 +1935,9 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
     switch (ippGetValueTag(attr))
     {
     case IPP_TAG_INTEGER:
-        str = (char *)(malloc(sizeof(char) * 50));
-        snprintf(str, sizeof(str), "%d", ippGetInteger(attr, index));
+        #define TAG_INTEGER_LEN 50
+        str = (char *)(malloc(sizeof(char) * TAG_INTEGER_LEN));
+        snprintf(str, TAG_INTEGER_LEN, "%d", ippGetInteger(attr, index));
         break;
 
     case IPP_TAG_ENUM:
@@ -1945,9 +1946,10 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
         break;
 
     case IPP_TAG_RANGE:
-        str = (char *)(malloc(sizeof(char) * 100));
+        #define TAG_RANGE_LEN 100
+        str = (char *)(malloc(sizeof(char) * TAG_RANGE_LEN));
         int upper, lower = ippGetRange(attr, index, &upper);
-        snprintf(str, sizeof(str), "%d-%d", lower, upper);
+        snprintf(str, TAG_RANGE_LEN, "%d-%d", lower, upper);
         break;
 
     case IPP_TAG_RESOLUTION:
