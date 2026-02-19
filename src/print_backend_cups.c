@@ -94,7 +94,7 @@ on_printer_deleted (CupsNotifier *object,
 int main()
 {
     /* Initialize internal default settings of the CUPS library */
-    int p = ippPort();
+    (void)ippPort();
 
     b = get_new_BackendObj();
     cpdbInit();
@@ -491,7 +491,7 @@ static gboolean on_handle_ping(PrintBackend *interface,
                                gpointer user_data)
 {
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
-    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    (void)get_printer_by_name(b, dialog_name, printer_name);
     print_backend_complete_ping(interface, invocation);
     return TRUE;
 }
