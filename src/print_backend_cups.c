@@ -123,7 +123,7 @@ int main()
     if (cups_notifier != NULL)
     {
         g_signal_connect(cups_notifier, "printer-state-changed",
-                            G_CALLBACK(on_printer_deleted), NULL);
+                            G_CALLBACK(on_printer_state_changed), NULL);
         g_signal_connect(cups_notifier, "printer-deleted",
                             G_CALLBACK(on_printer_deleted), NULL);
         g_signal_connect(cups_notifier, "printer-added",
