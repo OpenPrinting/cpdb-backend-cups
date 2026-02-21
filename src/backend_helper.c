@@ -1439,53 +1439,67 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
          */
         num_options = cupsAddOption(option_name, option_value, num_options, &options);
     }
-    int job_id = 0;
-    cupsCreateDestJob(p->http, p->dest, p->dinfo,
-                      &job_id, title, num_options, options);
-    cupsStartDestDocument(p->http, p->dest, p->dinfo,
-			  job_id, title, CUPS_FORMAT_AUTO,
-			  num_options, options, 1);
-
+   
+    
+    // Prepare the socket connection
+    
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (socket_fd == -1) {
-        perror("Error creating socket");
-        return;
+    if(socket_fd ==-1) {
+   	perror("Error creating socket");
+	return;
     }
-    char mkdir_cmd[256];
-    snprintf(mkdir_cmd, 256,
-	     "mkdir -p %s/cpdb/sockets", getenv("HOME"));
-    if (system(mkdir_cmd)!=0){
-        perror("Unable to create the sockets directory");
-        return;
+    
+    char *home = getenv("HOME");
+    char socket_dir[256];
+    snprintf(socket_dir, sizeof(socket_dir), "%s/cpdb/sockets", home);
+    
+   // Create directory if doesn't exists
+    struct stat st = {0};
+    if(stat(socket_dir, &st) == -1) {
+	mkdir(socket_dir, 0700);
     }
+ 
     int socket_option = 1;
     setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option, sizeof(socket_option));
 
-    snprintf(job_id_str, 32, "%d", job_id);
-    snprintf(socket_path, 256,
-	     "%s/cpdb/sockets/cups-%s.sock", getenv("HOME"),job_id_str);
-    p->stream_socket_path = socket_path;
-    struct sockaddr_un server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sun_family = AF_UNIX;
-    strncpy(server_addr.sun_path, socket_path, sizeof(server_addr.sun_path) - 1);
+    // Create the CUPS JOB
 
-    unlink(socket_path);
-
-    if (bind(socket_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
-        perror("Error connecting to CPDB CUPS backend socket");
-        close(socket_fd);
-        return;
-    }
-
-    // Listen for incoming connections, we only need to support one
-    // single connection (no queue), as the socket is dedicated for a single
-    // job.
-    if (listen(socket_fd, 1) == -1) {
-        perror("Error listening to CPDB CUPS backend socket");
-        close(socket_fd);
-    }
-    
+    int job_id = 0;
+    if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
+       num_options, options) != IPP_STATUS_OK) { 
+	   printf("job not created" , cupsLastErrorString());
+           close(socket_fd);
+	   return;
+  }
+     snprintf(job_id_str, 32, "%d", job_id);
+     snprintf(socket_path, 256, "%s/cups-%s.sock", socket_dir, job_id_str);
+	p->stream_socket_path = socket_path;
+       
+     struct sockaddr_un server_addr;
+     memset(&server_addr, 0, sizeof(server_addr));
+     server_addr.sun_family = AF_UNIX;
+     strncpy(server_addr.sun_path, socket_path, sizeof(server_addr.sun_path) - 1);
+        unlink(socket_path);
+	if(bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
+		perror("Bind failed");
+		close(socket_fd);
+		return;
+	} 
+   	
+         
+	 if(listen(socket_fd, 1) == -1) {
+	 perror("listen failed");
+	 close(socket_fd);
+	 return;
+	}
+        // start cups document
+	if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
+	   num_options, options, 1) != HTTP_STATUS_CONTINUE) {
+		printf("could not start document: %s\n", cupsLastErrorString());
+		close(socket_fd);
+		return;
+	}
+	  printf("Backend running and listening on: %s\n", socket_path);
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
     thread_data->printer = p;
