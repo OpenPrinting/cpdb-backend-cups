@@ -7,6 +7,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
+#include <glib.h>
 
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
@@ -1473,7 +1474,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
   }
      snprintf(job_id_str, 32, "%d", job_id);
      snprintf(socket_path, 256, "%s/cups-%s.sock", socket_dir, job_id_str);
-	p->stream_socket_path = socket_path;
+	p->stream_socket_path = g_strdup(socket_path);
        
      struct sockaddr_un server_addr;
      memset(&server_addr, 0, sizeof(server_addr));
