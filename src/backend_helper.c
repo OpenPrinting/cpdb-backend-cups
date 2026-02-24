@@ -9,6 +9,7 @@
 #include <cupsfilters/ipp.h>
 
 
+
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
 
@@ -1478,8 +1479,11 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
 	   return;
   }
      snprintf(job_id_str, 32, "%d", job_id);
+
      snprintf(socket_path, 1024, "%s/cups-%s.sock", socket_dir, job_id_str);
-	p->stream_socket_path = g_strdup(socket_path);
+
+     snprintf(socket_path, 256, "%s/cups-%s.sock", socket_dir, job_id_str);
+	p->stream_socket_path = socket_path;
 
        
      struct sockaddr_un server_addr;
