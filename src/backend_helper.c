@@ -7,7 +7,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
-#include <glib.h>
+
 
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
@@ -1449,9 +1449,10 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
    	perror("Error creating socket");
 	return;
     }
-    
+       
     char *home = getenv("HOME");
     char socket_dir[256];
+
     snprintf(socket_dir, sizeof(socket_dir), "%s/cpdb/sockets", home);
     
    // Create directory if doesn't exists
@@ -1459,6 +1460,10 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     if(stat(socket_dir, &st) == -1) {
 	mkdir(socket_dir, 0700);
     }
+
+    char mkdir_cmd[512];
+    snprintf(mkdir_cmd , sizeof(mkdir_cmd), "mkdir -p %s", socket_dir);
+    system(mkdir_cmd);    
  
     int socket_option = 1;
     setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option, sizeof(socket_option));
@@ -1468,12 +1473,12 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     int job_id = 0;
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
-	   printf("job not created" , cupsLastErrorString());
+	   printf("job not created: %s\n" , cupsLastErrorString());
            close(socket_fd);
 	   return;
   }
      snprintf(job_id_str, 32, "%d", job_id);
-     snprintf(socket_path, 256, "%s/cups-%s.sock", socket_dir, job_id_str);
+     snprintf(socket_path, 1024, "%s/cups-%s.sock", socket_dir, job_id_str);
 	p->stream_socket_path = g_strdup(socket_path);
 
        
