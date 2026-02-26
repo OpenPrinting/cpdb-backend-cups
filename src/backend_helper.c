@@ -1452,10 +1452,15 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     }
        
     char *home = getenv("HOME");
+    char base_dir[512];
     char socket_dir[512];
 
+   snprintf(base_dir, sizeof(base_dir), "%s/cpdb" , home);
+    if(mkdir(base_dir, 0700) == -1 && errno != EEXIST){
+    	perror("Error creating base directory");
+    }
 
-    snprintf(socket_dir, sizeof(socket_dir), "%s/cpdb/sockets", home);
+    snprintf(socket_dir, sizeof(socket_dir), "%s/sockets", home);
     if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST) { 
 	perror("Error creating sockets directory");	
      }
