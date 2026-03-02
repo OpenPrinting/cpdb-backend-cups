@@ -38,9 +38,19 @@ cups_LDADD += $(GIOUNIX_LIBS)
 # ================================
 
 TESTS = \
-        run-tests.sh
+        run-tests.sh \
+        test_extractHostFromURI
+
+# Unit test program
+check_PROGRAMS = test_extractHostFromURI
+test_extractHostFromURI_SOURCES = \
+	test_extractHostFromURI.c \
+	backend_helper.c backend_helper.h
+test_extractHostFromURI_CPPFLAGS = $(CPDB_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
+test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) -lcups
 
 EXTRA_DIST = \
         run-tests.sh \
 	test.convs \
-	testpdf.ppd
+	testpdf.ppd \
+	test-internal.h
