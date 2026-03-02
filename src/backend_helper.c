@@ -1508,6 +1508,13 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     close(socket_fd);
     return;
     }
+    
+    int client_fd = accept(socket_fd, NULL, NULL);
+    if (client_fd == -1) {
+    perror("accept failed");
+    close(socket_fd);
+    return;
+    }
     printf("Backend running and listening on: %s\n", socket_path);
 
     // Create a struct to pass data to the thread
