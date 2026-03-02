@@ -94,7 +94,7 @@ on_printer_deleted (CupsNotifier *object,
 int main()
 {
     /* Initialize internal default settings of the CUPS library */
-    int p = ippPort();
+    (void)ippPort();
 
     b = get_new_BackendObj();
     cpdbInit();
@@ -123,7 +123,7 @@ int main()
     if (cups_notifier != NULL)
     {
         g_signal_connect(cups_notifier, "printer-state-changed",
-                            G_CALLBACK(on_printer_deleted), NULL);
+                            G_CALLBACK(on_printer_state_changed), NULL);
         g_signal_connect(cups_notifier, "printer-deleted",
                             G_CALLBACK(on_printer_deleted), NULL);
         g_signal_connect(cups_notifier, "printer-added",
@@ -491,7 +491,7 @@ static gboolean on_handle_ping(PrintBackend *interface,
                                gpointer user_data)
 {
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
-    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    (void)get_printer_by_name(b, dialog_name, printer_name);
     print_backend_complete_ping(interface, invocation);
     return TRUE;
 }

@@ -7,12 +7,15 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
+#include <glib.h>
 
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
 
 static http_t *system_conn = NULL;
 static unsigned int HttpLocalTimeout = 5;
+
+static void *print_data_thread(void *data);
 
 Mappings *map;
 
@@ -1286,10 +1289,8 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     int i, j;							/** Looping variables **/
     int num_media;						/** Variable for number of "media" supported using CUPS call **/
     char *media_name;					/** Variable for media name **/
-    int width, length;					/** Variable for media width and media length **/
     int optsIndex = count;				/** Index for fillings options **/
-    pwg_media_t *pwg_media;	
-    ipp_t *media_col, *media_size;		/** media_col and media_size collections in IPP request **/
+    ipp_t *media_col;				/** media_col collection in IPP request **/
     ipp_attribute_t *vals, *default_val, *attr;
 
     count += 5;	/** "media", "media-{top, bottom, left, right}-margins" **/
@@ -1381,7 +1382,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 }
 const char *get_printer_state(PrinterCUPS *p)
 {
-    const char *str;
+    const char *str = NULL;
     ensure_printer_connection(p);
     ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     const char *uri = cupsGetOption("printer-uri-supported",
@@ -1406,7 +1407,6 @@ const char *get_printer_state(PrinterCUPS *p)
     if ((attr = ippFindAttribute(response, "printer-state",
                                  IPP_TAG_ENUM)) != NULL)
     {
-
         logdebug("printer-state=%d\n", ippGetInteger(attr, 0));
         str = map->state[ippGetInteger(attr, 0)];
     }
@@ -1440,53 +1440,68 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
          */
         num_options = cupsAddOption(option_name, option_value, num_options, &options);
     }
-    int job_id = 0;
-    cupsCreateDestJob(p->http, p->dest, p->dinfo,
-                      &job_id, title, num_options, options);
-    cupsStartDestDocument(p->http, p->dest, p->dinfo,
-			  job_id, title, CUPS_FORMAT_AUTO,
-			  num_options, options, 1);
-
+   
+    
+    // Prepare the socket connection
+    
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
-    if (socket_fd == -1) {
-        perror("Error creating socket");
-        return;
+    if(socket_fd ==-1) {
+   	perror("Error creating socket");
+	return;
     }
-    char mkdir_cmd[256];
-    snprintf(mkdir_cmd, 256,
-	     "mkdir -p %s/cpdb/sockets", getenv("HOME"));
-    if (system(mkdir_cmd)!=0){
-        perror("Unable to create the sockets directory");
-        return;
+    
+    char *home = getenv("HOME");
+    char socket_dir[256];
+    snprintf(socket_dir, sizeof(socket_dir), "%s/cpdb/sockets", home);
+    
+   // Create directory if doesn't exists
+    struct stat st = {0};
+    if(stat(socket_dir, &st) == -1) {
+	mkdir(socket_dir, 0700);
     }
+ 
     int socket_option = 1;
     setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option, sizeof(socket_option));
 
-    snprintf(job_id_str, 32, "%d", job_id);
-    snprintf(socket_path, 256,
-	     "%s/cpdb/sockets/cups-%s.sock", getenv("HOME"),job_id_str);
-    p->stream_socket_path = socket_path;
-    struct sockaddr_un server_addr;
-    memset(&server_addr, 0, sizeof(server_addr));
-    server_addr.sun_family = AF_UNIX;
-    strncpy(server_addr.sun_path, socket_path, sizeof(server_addr.sun_path) - 1);
+    // Create the CUPS JOB
 
-    unlink(socket_path);
+    int job_id = 0;
+    if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
+       num_options, options) != IPP_STATUS_OK) { 
+	   printf("job not created" , cupsLastErrorString());
+           close(socket_fd);
+	   return;
+  }
+     snprintf(job_id_str, 32, "%d", job_id);
+     snprintf(socket_path, 256, "%s/cups-%s.sock", socket_dir, job_id_str);
+	p->stream_socket_path = g_strdup(socket_path);
 
-    if (bind(socket_fd, (struct sockaddr *)&server_addr, sizeof(server_addr)) == -1) {
-        perror("Error connecting to CPDB CUPS backend socket");
-        close(socket_fd);
-        return;
-    }
-
-    // Listen for incoming connections, we only need to support one
-    // single connection (no queue), as the socket is dedicated for a single
-    // job.
-    if (listen(socket_fd, 1) == -1) {
-        perror("Error listening to CPDB CUPS backend socket");
-        close(socket_fd);
-    }
-    
+       
+     struct sockaddr_un server_addr;
+     memset(&server_addr, 0, sizeof(server_addr));
+     server_addr.sun_family = AF_UNIX;
+     strncpy(server_addr.sun_path, socket_path, sizeof(server_addr.sun_path) - 1);
+        unlink(socket_path);
+	if(bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
+		perror("Bind failed");
+		close(socket_fd);
+		return;
+	} 
+   	
+         
+	 if(listen(socket_fd, 1) == -1) {
+	 perror("listen failed");
+	 close(socket_fd);
+	 return;
+	}
+        // start cups document
+	if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
+	   num_options, options, 1) != HTTP_STATUS_CONTINUE) {
+		printf("could not start document: %s\n", cupsLastErrorString());
+		close(socket_fd);
+		return;
+	}
+	  printf("Backend running and listening on: %s\n", socket_path);
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
     thread_data->printer = p;
@@ -1507,7 +1522,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
 
 }
 
-void *print_data_thread(void *data) {
+static void *print_data_thread(void *data) {
     PrintDataThreadData *thread_data = (PrintDataThreadData *)data;
 
     // Allocate dynamic memory for the buffer within the thread
@@ -1554,20 +1569,6 @@ void printAllJobs(PrinterCUPS *p)
         print_job(&jobs[i]);
     }
 }
-static void list_group(ppd_file_t *ppd,    /* I - PPD file */
-                       ppd_group_t *group) /* I - Group to show */
-{
-    logdebug("List group %s\n", group->name);
-    /** Now iterate through the options in the particular group*/
-    logdebug("It has %d options.\n", group->num_options);
-    logdebug("Listing all of them ..\n");
-    int i;
-    for (i = 0; i < group->num_options; i++)
-    {
-        logdebug("    Option %d : %s\n", i, group->options[i].keyword);
-    }
-}
-
 
 /**********Dialog related funtions ****************/
 Dialog *get_new_Dialog()
@@ -1632,8 +1633,8 @@ void cups_get_Resolution(cups_dest_t *dest, int *xres, int *yres)
     cups_dinfo_t *dinfo = cupsCopyDestInfo(http, dest);
     g_assert_nonnull(dinfo);
     ipp_attribute_t *attr = cupsFindDestDefault(http, dest, dinfo, "printer-resolution");
-    ipp_res_t *units;
-    *xres = ippGetResolution(attr, 0, yres, units);
+    ipp_res_t units;
+    *xres = ippGetResolution(attr, 0, yres, &units);
 }
 
 int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
@@ -1936,8 +1937,9 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
     switch (ippGetValueTag(attr))
     {
     case IPP_TAG_INTEGER:
-        str = (char *)(malloc(sizeof(char) * 50));
-        snprintf(str, sizeof(str), "%d", ippGetInteger(attr, index));
+        #define TAG_INTEGER_LEN 50
+        str = (char *)(malloc(sizeof(char) * TAG_INTEGER_LEN));
+        snprintf(str, TAG_INTEGER_LEN, "%d", ippGetInteger(attr, index));
         break;
 
     case IPP_TAG_ENUM:
@@ -1946,9 +1948,10 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
         break;
 
     case IPP_TAG_RANGE:
-        str = (char *)(malloc(sizeof(char) * 100));
+        #define TAG_RANGE_LEN 100
+        str = (char *)(malloc(sizeof(char) * TAG_RANGE_LEN));
         int upper, lower = ippGetRange(attr, index, &upper);
-        snprintf(str, sizeof(str), "%d-%d", lower, upper);
+        snprintf(str, TAG_RANGE_LEN, "%d-%d", lower, upper);
         break;
 
     case IPP_TAG_RESOLUTION:
@@ -2030,10 +2033,10 @@ char *get_option_translation(PrinterCUPS *p,
 
     opts_catalog = cfCatalogOptionArrayNew();
     cfCatalogLoad(NULL, locale, opts_catalog);
+    printer_opts_catalog = cfCatalogOptionArrayNew();
     if ((attr = ippFindAttribute(response, "printer-strings-uri",
                                     IPP_TAG_URI)) != NULL)
     {
-        printer_opts_catalog = cfCatalogOptionArrayNew();
         cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
     }
 
@@ -2076,10 +2079,10 @@ char *get_choice_translation(PrinterCUPS *p,
 
     opts_catalog = cfCatalogOptionArrayNew();
     cfCatalogLoad(NULL, locale, opts_catalog);
+    printer_opts_catalog = cfCatalogOptionArrayNew();
     if ((attr = ippFindAttribute(response, "printer-strings-uri",
                                     IPP_TAG_URI)) != NULL)
     {
-        printer_opts_catalog = cfCatalogOptionArrayNew();
         cfCatalogLoad(ippGetString(attr, 0, NULL), NULL, printer_opts_catalog);
     }
 
