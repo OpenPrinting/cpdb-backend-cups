@@ -1442,7 +1442,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
         num_options = cupsAddOption(option_name, option_value, num_options, &options);
     }
    
-    
+   
     // Prepare the socket connection
     
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -1450,65 +1450,66 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
    	perror("Error creating socket");
 	return;
     }
-       
+    int socket_option = 1;
+    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option,
+    sizeof(socket_option));
+     
+    // Create base directories
     char *home = getenv("HOME");
-    char base_dir[512];
+    char base_dir[256];
     char socket_dir[512];
+    
 
    snprintf(base_dir, sizeof(base_dir), "%s/cpdb" , home);
     if(mkdir(base_dir, 0700) == -1 && errno != EEXIST){
     	perror("Error creating base directory");
     }
 
-    snprintf(socket_dir, sizeof(socket_dir), "%s/sockets", home);
-    if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST) { 
-	perror("Error creating sockets directory");	
-     }
-    
-   // socket option
-    int socket_option = 1;
-    setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option, sizeof(socket_option));
+    snprintf(socket_dir, sizeof(socket_dir), "%s/sockets", base_dir);
+    if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST){ 
+	perror("Error creating sockets directory");
+	}
 
     // Create the CUPS JOB
-
     int job_id = 0;
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
 	   printf("job not created: %s\n" , cupsLastErrorString());
            close(socket_fd);
 	   return;
-  }
-     snprintf(job_id_str, 32, "%d", job_id);
+    }
 
+     // Prepare the socket Path
+     snprintf(job_id_str,sizeof(job_id_str),"%d", job_id);
      snprintf(socket_path, 1024, "%s/cups-%s.sock", socket_dir, job_id_str);
-	p->stream_socket_path = g_strdup(socket_path);
+     p->stream_socket_path = g_strdup(socket_path);
 
-       
+     // Bind and listen
      struct sockaddr_un server_addr;
      memset(&server_addr, 0, sizeof(server_addr));
      server_addr.sun_family = AF_UNIX;
      strncpy(server_addr.sun_path, socket_path, sizeof(server_addr.sun_path) - 1);
-        unlink(socket_path);
-	if(bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
-		perror("Bind failed");
-		close(socket_fd);
-		return;
-	} 
-   	
-         
-	 if(listen(socket_fd, 1) == -1) {
-	 perror("listen failed");
-	 close(socket_fd);
-	 return;
-	}
-        // start cups document
-	if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
-	   num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-		printf("could not start document: %s\n", cupsLastErrorString());
-		close(socket_fd);
-		return;
-	}
-	  printf("Backend running and listening on: %s\n", socket_path);
+     unlink(socket_path);
+
+     if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
+     perror("Bind failed");
+     close(socket_fd);
+     return;
+    } 
+    if(listen(socket_fd, 1) == -1) {
+    perror("listen failed");
+    close(socket_fd);
+    return;
+    }
+    // start cups document
+    if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
+    num_options, options, 1) != HTTP_STATUS_CONTINUE) {
+    printf("could not start document: %s\n", cupsLastErrorString());
+    close(socket_fd);
+    return;
+    }
+    printf("Backend running and listening on: %s\n", socket_path);
+
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
     thread_data->printer = p;
