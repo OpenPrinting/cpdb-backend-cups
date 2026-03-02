@@ -26,3 +26,6 @@ src/test-suite.log
 data/org.openprinting.Backend.CUPS.service
 tmp/
 */Makefile
+test_extractHostFromURI.log
+test_extractHostFromURI.trs
+test_extractHostFromURI 

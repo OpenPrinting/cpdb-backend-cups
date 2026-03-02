@@ -42,4 +42,4 @@ jobs:
     - name: make
       run: make
     - name: Run Tests
-      run: make check || cat test/error_log*
+      run: make check || cat src/*.log
