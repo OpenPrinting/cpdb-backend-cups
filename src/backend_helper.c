@@ -1753,6 +1753,10 @@ char *extractHostFromURI(const char *uri) {
     const char *host_start, *host_end;
     char *host = NULL;
 
+    //Check for NULL input
+    if (uri == NULL){
+        return NULL;
+    }
     // Find the start of the host part
     host_start = strstr(uri, "://");
     if (host_start != NULL) {

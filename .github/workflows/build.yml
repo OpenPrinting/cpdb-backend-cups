@@ -21,7 +21,7 @@ jobs:
       run: sudo apt-get update --fix-missing -y
     - name: install prerequisites
       run: |
-       sudo apt-get install cups libcups2-dev libglib2.0-dev autoconf autopoint libdbus-1-dev libtool -y
+       sudo apt-get install cups libcups2-dev libcupsfilters-dev libglib2.0-dev autoconf autopoint libdbus-1-dev libtool -y
     - name: Install cpdb-libs Version >= 2.0.0 
       run: |
         cd ..
