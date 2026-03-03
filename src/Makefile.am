@@ -47,7 +47,7 @@ test_extractHostFromURI_SOURCES = \
 	test_extractHostFromURI.c \
 	backend_helper.c backend_helper.h
 test_extractHostFromURI_CPPFLAGS = $(CPDB_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
-test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) -lcups
+test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) -lcups -lcupsfilters
 
 EXTRA_DIST = \
         run-tests.sh \
