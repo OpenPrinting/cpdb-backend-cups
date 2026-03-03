@@ -7,7 +7,7 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
-
+#include <glib.h>
 
 
 #define MAX_ADDRESSES 10 
