@@ -111,7 +111,6 @@ typedef struct _PrintDataThreadData {
     int num_options;
     cups_option_t *options;
     int socket_fd;
-    int client_fd;
     struct sockaddr_un server_addr;
 } PrintDataThreadData;
 
