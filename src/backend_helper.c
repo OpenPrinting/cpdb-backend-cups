@@ -1500,13 +1500,6 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     close(socket_fd);
     return;
     }
-    // start cups document
-    if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
-    num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-    printf("could not start document: %s\n", cupsLastErrorString());
-    close(socket_fd);
-    return;
-    }
     
     int client_fd = accept(socket_fd, NULL, NULL);
     if (client_fd == -1) {
@@ -1516,6 +1509,14 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     }
     printf("Backend running and listening on: %s\n", socket_path);
 
+    // start cups document
+    if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
+    num_options, options, 1) != HTTP_STATUS_CONTINUE) {
+    printf("could not start document: %s\n", cupsLastErrorString());
+    close(socket_fd);
+    return;
+    }
+    
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
     thread_data->printer = p;
