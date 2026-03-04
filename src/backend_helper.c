@@ -1500,6 +1500,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     close(socket_fd);
     return;
     }
+
     // start cups document
     if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
     num_options, options, 1) != HTTP_STATUS_CONTINUE) {
@@ -1507,14 +1508,6 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     close(socket_fd);
     return;
     }
-    
-    int client_fd = accept(socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-    perror("accept failed");
-    close(socket_fd);
-    return;
-    }
-    printf("Backend running and listening on: %s\n", socket_path);
 
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
@@ -1542,11 +1535,13 @@ static void *print_data_thread(void *data) {
     // Allocate dynamic memory for the buffer within the thread
     char *buffer = g_malloc(1024);
 
-    // Accept incoming connections
+    //Accept incoming connections
     int client_fd = accept(thread_data->socket_fd, NULL, NULL);
     if (client_fd == -1) {
-        perror("Error accepting connection");
-        close(thread_data->socket_fd);
+        perror("accept failed");
+       close(thread_data->socket_fd);
+        g_free(thread_data);
+        return NULL;
     }
 
     // Placeholder logic for reading data from the socket
