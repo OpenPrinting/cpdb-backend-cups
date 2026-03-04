@@ -16,6 +16,10 @@
 #define NOTIFY_LEASE_DURATION (24 * 60 * 60)
 #define CUPS_DBUS_PATH "/org/cups/cupsd/Notifier"
 
+/* Buffer sizes for print socket */
+#define JOB_ID_BUFLEN 32
+#define SOCKET_PATH_BUFLEN 1024
+
 /* New Debug macros */
 #define BACKEND_NAME "CUPS"
 #define logdebug(...) cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_DEBUG, BACKEND_NAME, __VA_ARGS__)
