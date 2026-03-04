@@ -7,7 +7,6 @@
 #include <netdb.h>
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
-#include <glib.h>
 
 
 #define MAX_ADDRESSES 10 
@@ -1480,8 +1479,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     }
 
      // Prepare the socket Path
-     snprintf(job_id_str,sizeof(job_id_str),"%d", job_id);
-     snprintf(socket_path, 1024, "%s/cups-%s.sock", socket_dir, job_id_str);
+     snprintf(job_id_str, JOB_ID_BUFLEN,"%d", job_id);
+     snprintf(socket_path, SOCKET_PATH_BUFLEN, "%s/cups-%s.sock", socket_dir, job_id_str);
      p->stream_socket_path = g_strdup(socket_path);
 
      // Bind and listen

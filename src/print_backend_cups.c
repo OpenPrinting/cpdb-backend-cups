@@ -508,8 +508,8 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
 
     // Call the renamed function
-    char jobid[32];
-    char socket[256];
+    char jobid[JOB_ID_BUFLEN];
+    char socket[SOCKET_PATH_BUFLEN];
     print_socket(p, num_settings, settings, jobid, socket, title);
 
     // Complete the D-Bus method call with the result
