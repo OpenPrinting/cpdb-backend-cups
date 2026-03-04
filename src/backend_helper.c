@@ -1522,6 +1522,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     thread_data->num_options = num_options;
     thread_data->options = options;
     thread_data->socket_fd = socket_fd;
+    thread_data->client_fd = client_fd;
 
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
@@ -1542,12 +1543,8 @@ static void *print_data_thread(void *data) {
     // Allocate dynamic memory for the buffer within the thread
     char *buffer = g_malloc(1024);
 
-    // Accept incoming connections
-    int client_fd = accept(thread_data->socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-        perror("Error accepting connection");
-        close(thread_data->socket_fd);
-    }
+    // Reuse connections passed from print_socket()
+    int client_fd = thread_data->client_fd;
 
     // Placeholder logic for reading data from the socket
     ssize_t bytesRead;
