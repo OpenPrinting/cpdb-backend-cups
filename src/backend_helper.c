@@ -1446,8 +1446,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(socket_fd ==-1) {
-   	perror("Error creating socket");
-	return;
+   	    perror("Error creating socket");
+	    return;
     }
     int socket_option = 1;
     setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option,
@@ -1473,8 +1473,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     int job_id = 0;
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
-	   printf("job not created: %s\n" , cupsLastErrorString());
-           close(socket_fd);
+	    logwarn("job not created: %s\n" , cupsLastErrorString());
+        close(socket_fd);
 	   return;
     }
 
@@ -1491,22 +1491,22 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      unlink(socket_path);
 
      if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
-     perror("Bind failed");
-     close(socket_fd);
-     return;
+        perror("Bind failed");
+        close(socket_fd);
+        return;
     } 
     if(listen(socket_fd, 1) == -1) {
-    perror("listen failed");
-    close(socket_fd);
-    return;
+        perror("listen failed");
+        close(socket_fd);
+        return;
     }
 
     // start cups document
     if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
     num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-    printf("could not start document: %s\n", cupsLastErrorString());
-    close(socket_fd);
-    return;
+        logwarn("could not start document: %s\n", cupsLastErrorString());
+        close(socket_fd);
+        return;
     }
 
     // Create a struct to pass data to the thread
