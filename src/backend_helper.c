@@ -1473,7 +1473,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     int job_id = 0;
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
-	   printf("job not created: %s\n" , cupsLastErrorString());
+	   logwarn("job not created: %s\n" , cupsLastErrorString());
            close(socket_fd);
 	   return;
     }
@@ -1504,7 +1504,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     // start cups document
     if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
     num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-    printf("could not start document: %s\n", cupsLastErrorString());
+    logwarn("could not start document: %s\n", cupsLastErrorString());
     close(socket_fd);
     return;
     }
