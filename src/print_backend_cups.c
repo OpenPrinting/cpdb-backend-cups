@@ -514,9 +514,9 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
     print_socket(p, num_settings, settings, jobid, socket, title);
-
+    
     /* If socket_path is empty, print_socket failed before creating the job.
-     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
+    * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
     if (socket[0] == '\0') {
         logwarn("print_socket failed for printer %s\n", printer_id);
         g_dbus_method_invocation_return_error(invocation,
@@ -525,6 +525,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
                                             "Failed to create print job");
         return TRUE;
     }
+
     // Complete the D-Bus method call with the result
     print_backend_complete_print_socket(interface, invocation, jobid, socket);
 
