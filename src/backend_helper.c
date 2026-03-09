@@ -9,7 +9,6 @@
 #include <cupsfilters/ipp.h>
 #include <glib.h>
 
-
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
 
@@ -1447,8 +1446,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(socket_fd ==-1) {
-   	perror("Error creating socket");
-	return;
+   	    perror("Error creating socket");
+	    return;
     }
     int socket_option = 1;
     setsockopt(socket_fd, SOL_SOCKET, SO_REUSEADDR, &socket_option,
@@ -1474,14 +1473,14 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     int job_id = 0;
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
-	   printf("job not created: %s\n" , cupsLastErrorString());
-           close(socket_fd);
+	    logwarn("job not created: %s\n" , cupsLastErrorString());
+        close(socket_fd);
 	   return;
     }
 
      // Prepare the socket Path
-     snprintf(job_id_str,sizeof(job_id_str),"%d", job_id);
-     snprintf(socket_path, 1024, "%s/cups-%s.sock", socket_dir, job_id_str);
+     snprintf(job_id_str, JOB_ID_BUFLEN,"%d", job_id);
+     snprintf(socket_path, SOCKET_PATH_BUFLEN, "%s/cups-%s.sock", socket_dir, job_id_str);
      p->stream_socket_path = g_strdup(socket_path);
 
      // Bind and listen
@@ -1492,30 +1491,23 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      unlink(socket_path);
 
      if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
-     perror("Bind failed");
-     close(socket_fd);
-     return;
+        perror("Bind failed");
+        close(socket_fd);
+        return;
     } 
     if(listen(socket_fd, 1) == -1) {
-    perror("listen failed");
-    close(socket_fd);
-    return;
+        perror("listen failed");
+        close(socket_fd);
+        return;
     }
+
     // start cups document
     if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
     num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-    printf("could not start document: %s\n", cupsLastErrorString());
-    close(socket_fd);
-    return;
+        logwarn("could not start document: %s\n", cupsLastErrorString());
+        close(socket_fd);
+        return;
     }
-    
-    int client_fd = accept(socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-    perror("accept failed");
-    close(socket_fd);
-    return;
-    }
-    printf("Backend running and listening on: %s\n", socket_path);
 
     // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
@@ -1543,11 +1535,13 @@ static void *print_data_thread(void *data) {
     // Allocate dynamic memory for the buffer within the thread
     char *buffer = g_malloc(1024);
 
-    // Accept incoming connections
+    //Accept incoming connections
     int client_fd = accept(thread_data->socket_fd, NULL, NULL);
     if (client_fd == -1) {
-        perror("Error accepting connection");
-        close(thread_data->socket_fd);
+        perror("accept failed");
+       close(thread_data->socket_fd);
+        g_free(thread_data);
+        return NULL;
     }
 
     // Placeholder logic for reading data from the socket
