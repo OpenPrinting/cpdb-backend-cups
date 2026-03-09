@@ -1446,7 +1446,11 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(socket_fd ==-1) {
+<<<<<<< improve_logging
    	    logwarn("Error creating socket");
+=======
+   	    perror("Error creating socket");
+>>>>>>> master
 	    return;
     }
     int socket_option = 1;
@@ -1491,12 +1495,20 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      unlink(socket_path);
 
      if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
+<<<<<<< improve_logging
         logwarn("Bind failed");
+=======
+        perror("Bind failed");
+>>>>>>> master
         close(socket_fd);
         return;
     } 
     if(listen(socket_fd, 1) == -1) {
+<<<<<<< improve_logging
         logwarn("listen failed");
+=======
+        perror("listen failed");
+>>>>>>> master
         close(socket_fd);
         return;
     }
