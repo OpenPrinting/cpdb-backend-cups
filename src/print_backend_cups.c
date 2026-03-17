@@ -23,6 +23,7 @@ int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest);
 void connect_to_signals();
 
 BackendObj *b;
+GMainLoop *loop;
 
 void update_printer_lists()
 {
@@ -130,7 +131,7 @@ int main()
                             G_CALLBACK(on_printer_added), NULL);
     }
 
-    GMainLoop *loop = g_main_loop_new(NULL, FALSE);
+    loop = g_main_loop_new(NULL, FALSE);
     g_main_loop_run(loop);
 
     /* Main loop exited */
@@ -342,7 +343,7 @@ int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
     return 1; //continue enumeration
 }
 
-static void on_handle_do_listing(PrintBackend *interface,
+static gboolean on_handle_do_listing(PrintBackend *interface,
                                     GDBusMethodInvocation *invocation,
                                     gboolean is_listed,
                                     gpointer not_used)
@@ -352,19 +353,24 @@ static void on_handle_do_listing(PrintBackend *interface,
         const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
         Dialog *d = find_dialog(b, dialog_name);
         if (d && d->keep_alive)
-            return;
+            goto out;
 
         set_dialog_cancel(b, dialog_name);
         remove_frontend(b, dialog_name);
         if (no_frontends(b))
         {
+            // FIXME: this is racy against method calls already in-flight from dbus
             g_message("No frontends connected .. exiting backend.\n");
-            exit(EXIT_SUCCESS);
+            g_idle_add_once((GSourceOnceFunc)g_main_loop_quit, loop);
         }
     }
+
+out:
+    print_backend_complete_do_listing(interface, invocation);
+    return TRUE;
 }
 
-static void on_handle_show_remote_printers(PrintBackend *interface,
+static gboolean on_handle_show_remote_printers(PrintBackend *interface,
                                     GDBusMethodInvocation *invocation,
                                     gboolean is_visible,
                                     gpointer not_used)
@@ -386,10 +392,12 @@ static void on_handle_show_remote_printers(PrintBackend *interface,
             refresh_printer_list(b, dialog_name);
         }
     }
+    print_backend_complete_show_remote_printers(interface, invocation);
+    return TRUE;
 }
 
 
-static void on_handle_show_temporary_printers(PrintBackend *interface,
+static gboolean on_handle_show_temporary_printers(PrintBackend *interface,
                                     GDBusMethodInvocation *invocation,
                                     gboolean is_visible,
                                     gpointer not_used)
@@ -411,6 +419,8 @@ static void on_handle_show_temporary_printers(PrintBackend *interface,
             refresh_printer_list(b, dialog_name);
         }
     }
+    print_backend_complete_show_temporary_printers(interface, invocation);
+    return TRUE;
 }
 
 static gboolean on_handle_is_accepting_jobs(PrintBackend *interface,

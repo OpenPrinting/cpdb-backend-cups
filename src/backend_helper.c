@@ -1445,7 +1445,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     
     int socket_fd = socket(AF_UNIX, SOCK_STREAM, 0);
     if(socket_fd ==-1) {
-   	    perror("Error creating socket");
+   	    logwarn("Error creating socket");
 	    return;
     }
     int socket_option = 1;
@@ -1466,12 +1466,12 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
 
    snprintf(base_dir, sizeof(base_dir), "%s/cpdb" , home);
     if(mkdir(base_dir, 0700) == -1 && errno != EEXIST){
-    	perror("Error creating base directory");
+    	logwarn("Error creating base directory");
     }
 
     snprintf(socket_dir, sizeof(socket_dir), "%s/sockets", base_dir);
     if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST){ 
-	perror("Error creating sockets directory");
+	    logwarn("Error creating sockets directory");
 	}
 
     // Create the CUPS JOB
@@ -1496,13 +1496,13 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      unlink(socket_path);
 
      if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
-        perror("Bind failed");
+        logwarn("Bind failed");
         close(socket_fd);
         cupsFreeOptions(num_options, options);
         return;
     } 
     if(listen(socket_fd, 1) == -1) {
-        perror("listen failed");
+        logwarn("listen failed");
         close(socket_fd);
         cupsFreeOptions(num_options, options);
         return;
@@ -1527,7 +1527,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0) {
-        perror("Error creating thread");
+        logwarn("Error creating thread");
         close(socket_fd);
         cupsFreeOptions(num_options, options);
         g_free(thread_data);
@@ -1548,7 +1548,7 @@ static void *print_data_thread(void *data) {
     //Accept incoming connections
     int client_fd = accept(thread_data->socket_fd, NULL, NULL);
     if (client_fd == -1) {
-        perror("accept failed");
+        logwarn("accept failed");
        close(thread_data->socket_fd);
         g_free(thread_data);
         return NULL;
@@ -1817,7 +1817,7 @@ gboolean checkRemote(const char *uri) {
 
     // Get the hostname of the local machine
     if (gethostname(hostname, sizeof(hostname)) == -1) {
-        perror("gethostname");
+        logwarn("Error in gethostname");
         return 1;
     }
 
