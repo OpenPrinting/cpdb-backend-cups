@@ -8,7 +8,6 @@
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
 
-
 #define MAX_ADDRESSES 10 
 #define _CUPS_NO_DEPRECATED 1
 
@@ -1455,6 +1454,12 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      
     // Create base directories
     char *home = getenv("HOME");
+    if (home == NULL) {
+        logwarn("HOME environment variable not set\n");
+        close(socket_fd);
+        cupsFreeOptions(num_options, options);
+        return;
+    }
     char base_dir[256];
     char socket_dir[512];
     
@@ -1493,11 +1498,13 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
      if (bind(socket_fd, (struct sockaddr *)&server_addr , sizeof(server_addr)) == -1){
         logwarn("Bind failed");
         close(socket_fd);
+        cupsFreeOptions(num_options, options);
         return;
     } 
     if(listen(socket_fd, 1) == -1) {
         logwarn("listen failed");
         close(socket_fd);
+        cupsFreeOptions(num_options, options);
         return;
     }
 
@@ -1506,6 +1513,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     num_options, options, 1) != HTTP_STATUS_CONTINUE) {
         logwarn("could not start document: %s\n", cupsLastErrorString());
         close(socket_fd);
+        cupsFreeOptions(num_options, options);
         return;
     }
 
@@ -1521,6 +1529,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0) {
         logwarn("Error creating thread");
         close(socket_fd);
+        cupsFreeOptions(num_options, options);
+        g_free(thread_data);
     } else {
         // Detach the thread to allow it to run independently
         pthread_detach(thread);
