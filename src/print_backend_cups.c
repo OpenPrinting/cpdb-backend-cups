@@ -520,6 +520,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     // Call the renamed function
     char jobid[JOB_ID_BUFLEN];
     char socket[SOCKET_PATH_BUFLEN];
+    char error_msg[256] = "";
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 

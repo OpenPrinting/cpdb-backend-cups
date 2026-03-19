@@ -1420,7 +1420,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     ensure_printer_connection(p);
     int num_options = 0;
     cups_option_t *options;
-
+    error_msg[0] = '\0';
     GVariantIter *iter;
     g_variant_get(settings, "a(ss)", &iter);
 
