@@ -532,7 +532,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
         g_dbus_method_invocation_return_error(invocation,
                                             G_IO_ERROR,
                                             G_IO_ERROR_FAILED,
-                                            "Failed to create print job");
+                                            "%s", error_msg[0] ? error_msg : "Failed to create print job");
         return TRUE;
     }
 
