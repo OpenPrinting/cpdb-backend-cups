@@ -523,7 +523,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
-    print_socket(p, num_settings, settings, jobid, socket, title);
+    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg));
     
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
