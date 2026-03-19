@@ -520,10 +520,11 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     // Call the renamed function
     char jobid[JOB_ID_BUFLEN];
     char socket[SOCKET_PATH_BUFLEN];
+    char error_msg[256] = "";
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
-    print_socket(p, num_settings, settings, jobid, socket, title);
+    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg));
     
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
@@ -532,7 +533,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
         g_dbus_method_invocation_return_error(invocation,
                                             G_IO_ERROR,
                                             G_IO_ERROR_FAILED,
-                                            "Failed to create print job");
+                                            "%s", error_msg[0] ? error_msg : "Failed to create print job");
         return TRUE;
     }
 

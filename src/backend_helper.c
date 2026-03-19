@@ -1413,13 +1413,14 @@ const char *get_printer_state(PrinterCUPS *p)
 }
 
 
-
-void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *job_id_str, char *socket_path, const char *title)
+void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
+                  char *job_id_str, char *socket_path, const char *title,
+                  char *error_msg, int error_msg_len)
 {
     ensure_printer_connection(p);
     int num_options = 0;
     cups_option_t *options;
-
+    error_msg[0] = '\0';
     GVariantIter *iter;
     g_variant_get(settings, "a(ss)", &iter);
 
@@ -1479,6 +1480,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *jo
     if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
        num_options, options) != IPP_STATUS_OK) { 
 	    logwarn("job not created: %s\n" , cupsLastErrorString());
+        snprintf(error_msg, error_msg_len, "job not created: %s", cupsLastErrorString());
         close(socket_fd);
 	   return;
     }
