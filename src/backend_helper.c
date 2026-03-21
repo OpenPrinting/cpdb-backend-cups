@@ -1454,26 +1454,22 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     sizeof(socket_option));
      
     // Create base directories
-    char *home = getenv("HOME");
-    if (home == NULL) {
-        logwarn("HOME environment variable not set\n");
-        close(socket_fd);
-        cupsFreeOptions(num_options, options);
-        return;
+    const char *base = getenv("XDG_RUNTIME_DIR");
+    if (base == NULL) {
+        base = getenv("HOME");
+        if (base == NULL) {
+            logwarn("Both HOME and XDG_RUNTIME_DIR environment variables are not set\n");
+            close(socket_fd);
+            cupsFreeOptions(num_options, options);
+            return;
+        }
     }
-    char base_dir[256];
-    char socket_dir[512];
-    
 
-   snprintf(base_dir, sizeof(base_dir), "%s/cpdb" , home);
-    if(mkdir(base_dir, 0700) == -1 && errno != EEXIST){
+    char socket_dir[512];
+    snprintf(socket_dir, sizeof(socket_dir), "%s/cpdb" , base);
+    if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST){
     	logwarn("Error creating base directory");
     }
-
-    snprintf(socket_dir, sizeof(socket_dir), "%s/sockets", base_dir);
-    if(mkdir(socket_dir, 0700) == -1 && errno != EEXIST){ 
-	    logwarn("Error creating sockets directory");
-	}
 
     // Create the CUPS JOB
     int job_id = 0;
