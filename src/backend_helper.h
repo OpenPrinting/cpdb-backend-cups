@@ -107,11 +107,12 @@ typedef struct _Media
 } Media;
 
 typedef struct _PrintDataThreadData {
-    PrinterCUPS *printer;
-    int num_options;
+    cups_dest_t   *dest;
+    int            job_id;
+    int            num_options;
     cups_option_t *options;
-    int socket_fd;
-    struct sockaddr_un server_addr;
+    int            socket_fd;
+    char           title[256];
 } PrintDataThreadData;
 
 typedef struct _AddressList {
@@ -241,9 +242,8 @@ int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
-void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
-                  char *job_id_str, char *socket_path, const char *title,
-                  char *error_msg, int error_msg_len);
+void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *job_id_str, char *socket_path, const char *title);
+
 
 gboolean checkRemote(const char *uri);
 char *extractHostFromURI(const char *uri);
