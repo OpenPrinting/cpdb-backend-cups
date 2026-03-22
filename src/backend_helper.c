@@ -1539,20 +1539,34 @@ static void *print_data_thread(void *data) {
     PrintDataThreadData *thread_data = (PrintDataThreadData *)data;
     char *buffer = g_malloc(65536);
 
-    // Use CUPS_HTTP_DEFAULT here so CUPS uses this thread's own connection
-    // to cupsd via the Unix domain socket. Peer credential auth (Local)
-    // then succeeds automatically with our UID. Using p->http here would
-    // fail because that is a TCP connection where peer auth is impossible.
+    /*
+     * Use CUPS_HTTP_DEFAULT so the CUPS library connects to cupsd via the
+     * Unix domain socket on this thread. The kernel then automatically
+     * vouches for our UID via peer credentials (SO_PEERCRED), satisfying
+     * the authenticated CUPS policy without needing a password or Kerberos
+     * ticket. Using p->http here would fail because that is a TCP connection
+     * where peer credential auth is impossible.
+     */
     cups_dinfo_t *dinfo = cupsCopyDestInfo(CUPS_HTTP_DEFAULT, thread_data->dest);
     if (dinfo == NULL) {
         logerror("print_data_thread: could not get dest info: %s\n",
                  cupsLastErrorString());
-        goto cleanup;
+        close(thread_data->socket_fd);
+        cupsFreeOptions(thread_data->num_options, thread_data->options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(buffer);
+        g_free(thread_data);
+        return NULL;
     }
 
-    // cupsStartDestDocument begins a chunked HTTP POST that must be
-    // continued by cupsWriteRequestData and cupsFinishDestDocument on
-    // this same thread using the same CUPS_HTTP_DEFAULT connection.
+    /*
+     * cupsStartDestDocument begins a chunked HTTP POST on this thread's
+     * CUPS_HTTP_DEFAULT connection. cupsWriteRequestData and
+     * cupsFinishDestDocument must be called on the same thread to continue
+     * and finish that same HTTP POST — CUPS_HTTP_DEFAULT is per-thread
+     * (stored in _cups_globals_t), so mixing threads here would use a
+     * different connection and corrupt the stream.
+     */
     if (cupsStartDestDocument(CUPS_HTTP_DEFAULT,
                               thread_data->dest, dinfo,
                               thread_data->job_id,
@@ -1564,16 +1578,28 @@ static void *print_data_thread(void *data) {
         logerror("print_data_thread: could not start document: %s\n",
                  cupsLastErrorString());
         cupsFreeDestInfo(dinfo);
-        goto cleanup;
+        close(thread_data->socket_fd);
+        cupsFreeOptions(thread_data->num_options, thread_data->options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(buffer);
+        g_free(thread_data);
+        return NULL;
     }
 
+    /* Wait for the frontend to connect and start sending print data */
     int client_fd = accept(thread_data->socket_fd, NULL, NULL);
     if (client_fd == -1) {
         logwarn("print_data_thread: accept failed\n");
         cupsFreeDestInfo(dinfo);
-        goto cleanup;
+        close(thread_data->socket_fd);
+        cupsFreeOptions(thread_data->num_options, thread_data->options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(buffer);
+        g_free(thread_data);
+        return NULL;
     }
 
+    /* Read print data from the socket and forward it to CUPS */
     ssize_t bytes_read;
     while ((bytes_read = read(client_fd, buffer, 65536)) > 0) {
         if (cupsWriteRequestData(CUPS_HTTP_DEFAULT, buffer, bytes_read)
@@ -1584,6 +1610,7 @@ static void *print_data_thread(void *data) {
     }
     close(client_fd);
 
+    /* Finalise the document and report the result */
     if (cupsFinishDestDocument(CUPS_HTTP_DEFAULT,
                                thread_data->dest, dinfo) == IPP_STATUS_OK)
         logdebug("Document send succeeded.\n");
@@ -1591,13 +1618,11 @@ static void *print_data_thread(void *data) {
         logerror("Document send failed: %s\n", cupsLastErrorString());
 
     cupsFreeDestInfo(dinfo);
-
-cleanup:
     close(thread_data->socket_fd);
     cupsFreeOptions(thread_data->num_options, thread_data->options);
     cupsFreeDests(1, thread_data->dest);
-    g_free(thread_data);
     g_free(buffer);
+    g_free(thread_data);
     return NULL;
 }
 
