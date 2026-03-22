@@ -1477,8 +1477,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
 
     // Create the CUPS JOB
     int job_id = 0;
-    if(cupsCreateDestJob(p->http, p->dest, p->dinfo, &job_id, title,
-       num_options, options) != IPP_STATUS_OK) { 
+    if(cupsCreateDestJob(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, &job_id, title,
+   num_options, options) != IPP_STATUS_OK) {
 	    logwarn("job not created: %s\n" , cupsLastErrorString());
         snprintf(error_msg, error_msg_len, "job not created: %s", cupsLastErrorString());
         close(socket_fd);
@@ -1510,21 +1510,14 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
         return;
     }
 
-    // start cups document
-    if(cupsStartDestDocument(p->http, p->dest, p->dinfo, job_id, title, CUPS_FORMAT_AUTO,
-    num_options, options, 1) != HTTP_STATUS_CONTINUE) {
-        logwarn("could not start document: %s\n", cupsLastErrorString());
-        close(socket_fd);
-        cupsFreeOptions(num_options, options);
-        return;
-    }
-
-    // Create a struct to pass data to the thread
+   // Create a struct to pass data to the thread
     PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
-    thread_data->printer = p;
+    cupsCopyDest(p->dest, 0, &thread_data->dest);
+    thread_data->job_id     = job_id;
     thread_data->num_options = num_options;
-    thread_data->options = options;
-    thread_data->socket_fd = socket_fd;
+    thread_data->options    = options;
+    thread_data->socket_fd  = socket_fd;
+    snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
 
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
@@ -1532,6 +1525,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
         logwarn("Error creating thread");
         close(socket_fd);
         cupsFreeOptions(num_options, options);
+        cupsFreeDests(1, thread_data->dest);
         g_free(thread_data);
     } else {
         // Detach the thread to allow it to run independently
@@ -1543,40 +1537,67 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
 
 static void *print_data_thread(void *data) {
     PrintDataThreadData *thread_data = (PrintDataThreadData *)data;
+    char *buffer = g_malloc(65536);
 
-    // Allocate dynamic memory for the buffer within the thread
-    char *buffer = g_malloc(1024);
-
-    //Accept incoming connections
-    int client_fd = accept(thread_data->socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-        logwarn("accept failed");
-       close(thread_data->socket_fd);
-        g_free(thread_data);
-        return NULL;
+    // Use CUPS_HTTP_DEFAULT here so CUPS uses this thread's own connection
+    // to cupsd via the Unix domain socket. Peer credential auth (Local)
+    // then succeeds automatically with our UID. Using p->http here would
+    // fail because that is a TCP connection where peer auth is impossible.
+    cups_dinfo_t *dinfo = cupsCopyDestInfo(CUPS_HTTP_DEFAULT, thread_data->dest);
+    if (dinfo == NULL) {
+        logerror("print_data_thread: could not get dest info: %s\n",
+                 cupsLastErrorString());
+        goto cleanup;
     }
 
-    // Placeholder logic for reading data from the socket
-    ssize_t bytesRead;
-    while ((bytesRead = read(client_fd, buffer, 1024)) > 0) {
-        // Send data to CUPS using cupsWriteRequestData
-        http_status_t http_status = cupsWriteRequestData(thread_data->printer->http, buffer, bytesRead);
-        if (http_status != HTTP_STATUS_CONTINUE) {
-            logerror("Error writing print data to server.\n");
+    // cupsStartDestDocument begins a chunked HTTP POST that must be
+    // continued by cupsWriteRequestData and cupsFinishDestDocument on
+    // this same thread using the same CUPS_HTTP_DEFAULT connection.
+    if (cupsStartDestDocument(CUPS_HTTP_DEFAULT,
+                              thread_data->dest, dinfo,
+                              thread_data->job_id,
+                              thread_data->title,
+                              CUPS_FORMAT_AUTO,
+                              thread_data->num_options,
+                              thread_data->options,
+                              1) != HTTP_STATUS_CONTINUE) {
+        logerror("print_data_thread: could not start document: %s\n",
+                 cupsLastErrorString());
+        cupsFreeDestInfo(dinfo);
+        goto cleanup;
+    }
+
+    int client_fd = accept(thread_data->socket_fd, NULL, NULL);
+    if (client_fd == -1) {
+        logwarn("print_data_thread: accept failed\n");
+        cupsFreeDestInfo(dinfo);
+        goto cleanup;
+    }
+
+    ssize_t bytes_read;
+    while ((bytes_read = read(client_fd, buffer, 65536)) > 0) {
+        if (cupsWriteRequestData(CUPS_HTTP_DEFAULT, buffer, bytes_read)
+                != HTTP_STATUS_CONTINUE) {
+            logerror("print_data_thread: error writing print data\n");
             break;
         }
     }
+    close(client_fd);
 
-    // Cleanup and free resources
-    close(thread_data->socket_fd);
-    if (cupsFinishDestDocument(thread_data->printer->http, thread_data->printer->dest, thread_data->printer->dinfo) == IPP_STATUS_OK)
+    if (cupsFinishDestDocument(CUPS_HTTP_DEFAULT,
+                               thread_data->dest, dinfo) == IPP_STATUS_OK)
         logdebug("Document send succeeded.\n");
     else
         logerror("Document send failed: %s\n", cupsLastErrorString());
+
+    cupsFreeDestInfo(dinfo);
+
+cleanup:
+    close(thread_data->socket_fd);
     cupsFreeOptions(thread_data->num_options, thread_data->options);
+    cupsFreeDests(1, thread_data->dest);
     g_free(thread_data);
     g_free(buffer);
-
     return NULL;
 }
 

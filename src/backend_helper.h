@@ -242,8 +242,9 @@ int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
-void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings, char *job_id_str, char *socket_path, const char *title);
-
+void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
+                  char *job_id_str, char *socket_path, const char *title,
+                  char *error_msg, int error_msg_len);
 
 gboolean checkRemote(const char *uri);
 char *extractHostFromURI(const char *uri);
