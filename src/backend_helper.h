@@ -107,11 +107,12 @@ typedef struct _Media
 } Media;
 
 typedef struct _PrintDataThreadData {
-    PrinterCUPS *printer;
-    int num_options;
+    cups_dest_t   *dest;
+    int            job_id;
+    int            num_options;
     cups_option_t *options;
-    int socket_fd;
-    struct sockaddr_un server_addr;
+    int            socket_fd;
+    char           title[256];
 } PrintDataThreadData;
 
 typedef struct _AddressList {
