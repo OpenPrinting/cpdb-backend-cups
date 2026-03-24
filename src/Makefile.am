@@ -26,7 +26,7 @@ cups_CPPFLAGS += $(GLIB_CFLAGS)
 cups_CPPFLAGS += $(GIO_CFLAGS)
 cups_CPPFLAGS += $(GIOUNIX_CFLAGS)
 
-cups_LDADD  = -lcups -lpthread -lm -lcrypt
+cups_LDADD  = -lcups -lpthread -lm
 cups_LDADD += $(CPDB_LIBS)
 cups_LDADD += $(LIBCUPSFILTERS_LIBS)
 cups_LDADD += $(GLIB_LIBS)
