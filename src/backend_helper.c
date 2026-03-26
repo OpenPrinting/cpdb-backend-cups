@@ -1,4 +1,5 @@
 #include "backend_helper.h"
+#include <cups/cups.h>
 #include <pthread.h>
 #include <sys/socket.h>
 #include <sys/un.h>
@@ -580,7 +581,6 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
     }
     p->dest = dest_copy;
     p->name = get_printer_name_for_cups_dest(dest_copy);
-    p->http = NULL;
     p->dinfo = NULL;
     p->stream_socket_path = NULL;
 
@@ -598,27 +598,26 @@ void free_PrinterCUPS(PrinterCUPS *p)
     }
 }
 
-gboolean ensure_printer_connection(PrinterCUPS *p)
+gboolean ensure_dest_info(PrinterCUPS *p)
 {
-    if (p->http)
+    if (p->dinfo)
         return TRUE;
 
-    int temp = FALSE;
-    if (cups_is_temporary(p->dest)) temp = TRUE;
-
-    p->http = cupsConnectDest(p->dest, CUPS_DEST_FLAGS_NONE, 300, NULL, NULL, 0, NULL, NULL);
-    if (p->http == NULL)
-        return FALSE;
-
-    // update dest after temporary CUPS queue has been created
-    if (temp)
+    /*
+     * For temporary destinations (discovered but not yet set up as a local
+     * queue), we need to resolve them first so that printer-uri-supported
+     * is populated and cupsCopyDestInfo can query the printer capabilities.
+     */
+    if (cups_is_temporary(p->dest))
     {
-        cups_dest_t *new_dest = cupsGetNamedDest(p->http, p->name, NULL);
+        cups_dest_t *new_dest = cupsGetNamedDest(CUPS_HTTP_DEFAULT, p->name, NULL);
+        if (new_dest == NULL)
+            return FALSE;
         cupsFreeDests(1, p->dest);
         p->dest = new_dest;
     }
 
-    p->dinfo = cupsCopyDestInfo(p->http, p->dest);
+    p->dinfo = cupsCopyDestInfo(CUPS_HTTP_DEFAULT, p->dest);
     if (p->dinfo == NULL)
         return FALSE;
 
@@ -628,9 +627,9 @@ gboolean ensure_printer_connection(PrinterCUPS *p)
 int get_supported(PrinterCUPS *p, char ***supported_values, const char *option_name)
 {
     char **values;
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     ipp_attribute_t *attrs =
-        cupsFindDestSupported(p->http, p->dest, p->dinfo, option_name);
+        cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_name);
     int i, count = ippGetCount(attrs);
     if (!count)
     {
@@ -661,10 +660,10 @@ char *get_orientation_default(PrinterCUPS *p)
             return g_strdup(ippEnumString(CUPS_ORIENTATION, atoi(def_value)));
         }
     }
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     ipp_attribute_t *attr = NULL;
 
-    attr = cupsFindDestDefault(p->http, p->dest, p->dinfo, CUPS_ORIENTATION);
+    attr = cupsFindDestDefault(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, CUPS_ORIENTATION);
     if (!attr)
         return g_strdup("NA");
 
@@ -686,8 +685,8 @@ char *get_default(PrinterCUPS *p, char *option_name)
         return get_orientation_default(p);
 
     /** Generic cases next **/
-    ensure_printer_connection(p);
-    ipp_attribute_t *def_attr = cupsFindDestDefault(p->http, p->dest, p->dinfo, option_name);
+    ensure_dest_info(p);
+    ipp_attribute_t *def_attr = cupsFindDestDefault(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_name);
     const char *def_value = cupsGetOption(option_name, p->dest->num_options, p->dest->options);
 
     /** First check the option is already there in p->dest->options **/
@@ -799,7 +798,7 @@ GVariant *pack_media(const Media *media)
 }
 int get_all_options(PrinterCUPS *p, Option **options)
 {
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
 
     char **option_names;
     int num_options = get_job_creation_attributes(p, &option_names); /** number of options to be returned**/
@@ -843,7 +842,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
             continue;
 
         opts[optsIndex].option_name = option_names[i];
-        vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, option_names[i]);
+        vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_names[i]);
         if (vals)
             opts[optsIndex].num_supported = ippGetCount(vals);
         else
@@ -1151,7 +1150,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
 }
 int get_all_media(PrinterCUPS *p, Media **medias)
 {	
-	ensure_printer_connection(p);
+	ensure_dest_info(p);
 	ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
 	const char *uri = cupsGetOption("printer-uri-supported", 
 									p->dest->num_options,
@@ -1163,7 +1162,7 @@ int get_all_media(PrinterCUPS *p, Media **medias)
                   "requested-attributes", 1, NULL,
                   requested_attributes);
 
-    ipp_t *response = cupsDoRequest(p->http, request, "/");
+    ipp_t *response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");
     if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
     {
         /* request failed */
@@ -1313,7 +1312,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     }
     
     /** Add custom_min and custom_max media if they exist **/
-    vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, "media");
+    vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, "media");
     if (vals)
 		num_media = ippGetCount(vals);
 	else
@@ -1342,11 +1341,11 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
     char def[16];
     char *attrs[] = {"media-left-margin", "media-bottom-margin", "media-top-margin", "media-right-margin"};
 
-    default_val = cupsFindDestDefault(p->http, p->dest, p->dinfo, "media-col");
+    default_val = cupsFindDestDefault(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, "media-col");
     
     for (i = 0; i < 4; i++) // for each attr in attrs
     {
-        vals = cupsFindDestSupported(p->http, p->dest, p->dinfo, attrs[i]);
+        vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, attrs[i]);
         opts[optsIndex].option_name = g_strdup(attrs[i]);
         if (vals)
             opts[optsIndex].num_supported = ippGetCount(vals);
@@ -1382,7 +1381,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 const char *get_printer_state(PrinterCUPS *p)
 {
     const char *str = NULL;
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     const char *uri = cupsGetOption("printer-uri-supported",
                                     p->dest->num_options,
@@ -1394,7 +1393,7 @@ const char *get_printer_state(PrinterCUPS *p)
                   "requested-attributes", 1, NULL,
                   requested_attributes);
 
-    ipp_t *response = cupsDoRequest(p->http, request, "/");
+    ipp_t *response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");
     if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
     {
         /* request failed */
@@ -1417,7 +1416,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
                   char *error_msg, int error_msg_len)
 {
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     int num_options = 0;
     cups_option_t *options;
     error_msg[0] = '\0';
@@ -1628,9 +1627,9 @@ static void *print_data_thread(void *data) {
 
 void printAllJobs(PrinterCUPS *p)
 {
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     cups_job_t *jobs;
-    int num_jobs = cupsGetJobs2(p->http, &jobs, p->name, 1, CUPS_WHICHJOBS_ALL);
+    int num_jobs = cupsGetJobs2(CUPS_HTTP_DEFAULT, &jobs, p->name, 1, CUPS_WHICHJOBS_ALL);
     for (int i = 0; i < num_jobs; i++)
     {
         print_job(&jobs[i]);
@@ -2085,7 +2084,7 @@ char *get_option_translation(PrinterCUPS *p,
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
 
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     uri = cupsGetOption("printer-uri-supported", 
                         p->dest->num_options,
@@ -2094,8 +2093,7 @@ char *get_option_translation(PrinterCUPS *p,
                     "printer-uri", NULL, uri);
     ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
                     "requested-attributes", 1, NULL, req_attrs);
-    response = cupsDoRequest(p->http, request, "/");
-    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
     {
         /* request failed */
         logerror("Request failed: %s\n", cupsLastErrorString());
@@ -2131,7 +2129,7 @@ char *get_choice_translation(PrinterCUPS *p,
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
 
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     uri = cupsGetOption("printer-uri-supported", 
                         p->dest->num_options,
@@ -2140,7 +2138,7 @@ char *get_choice_translation(PrinterCUPS *p,
                     "printer-uri", NULL, uri);
     ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
                     "requested-attributes", 1, NULL, req_attrs);
-    response = cupsDoRequest(p->http, request, "/");
+    response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");
     if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
     {
         /* request failed */

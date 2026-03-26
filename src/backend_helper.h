@@ -41,7 +41,7 @@ typedef struct _PrinterCUPS
 {
     char *name;
     cups_dest_t *dest;
-    http_t *http;
+    // http_t *http;
     cups_dinfo_t *dinfo;
     char *stream_socket_path;
 } PrinterCUPS;
@@ -225,9 +225,8 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest);
 /** Free up the memory used by the struct **/
 void free_PrinterCUPS(PrinterCUPS *);
 
-/** Ensure that we have a connection the server**/
-gboolean ensure_printer_connection(PrinterCUPS *p);
-
+/** Ensure that we have destination info the server**/
+gboolean ensure_dest_info(PrinterCUPS *p);
 /**
  * Get state of the printer
  * state is one of the following {"idle" , "processing" , "stopped"}
