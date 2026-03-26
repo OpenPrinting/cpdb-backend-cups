@@ -41,7 +41,6 @@ typedef struct _PrinterCUPS
 {
     char *name;
     cups_dest_t *dest;
-    // http_t *http;
     cups_dinfo_t *dinfo;
     char *stream_socket_path;
 } PrinterCUPS;
