@@ -111,6 +111,14 @@ typedef struct _PrintDataThreadData {
     int            num_options;
     cups_option_t *options;
     int            socket_fd;
+    /*
+     * use_fd == 0  Legacy socket-file path: socket_fd is a listening
+     *              socket; the thread must call accept() to get the
+     *              connected client fd.
+     * use_fd == 1  FD-passing path: socket_fd is already the connected
+     *              peer end from socketpair(); used directly, no accept().
+     */
+    int  use_fd; 
     char           title[256];
 } PrintDataThreadData;
 
@@ -243,6 +251,19 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
                   char *error_msg, int error_msg_len);
+
+/**
+ * FD-passing variant of print_socket().
+ *
+ * Creates a socketpair(), starts the print-data thread on one end, and
+ * returns the other end in *peer_fd. The D-Bus handler passes *peer_fd
+ * to the frontend via D-Bus UnixFD.
+ *
+ * On failure *peer_fd is -1 and error_msg is populated.
+ */
+void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
+              char *job_id_str, int *peer_fd, const char *title,
+              char *error_msg, int error_msg_len);
 
 gboolean checkRemote(const char *uri);
 char *extractHostFromURI(const char *uri);

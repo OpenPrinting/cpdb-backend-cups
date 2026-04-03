@@ -1515,7 +1515,8 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     thread_data->job_id     = job_id;
     thread_data->num_options = num_options;
     thread_data->options    = options;
-    thread_data->socket_fd  = socket_fd;
+    thread_data->use_fd    = 0;
+    thread_data->socket_fd  = socket_fd; /* legacy: thread must call accept() */
     snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
 
     // Create a thread for handling data transfer to CUPS
@@ -1585,19 +1586,29 @@ static void *print_data_thread(void *data) {
         return NULL;
     }
 
-    /* Wait for the frontend to connect and start sending print data */
-    int client_fd = accept(thread_data->socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-        logwarn("print_data_thread: accept failed\n");
-        cupsFreeDestInfo(dinfo);
-        close(thread_data->socket_fd);
-        cupsFreeOptions(thread_data->num_options, thread_data->options);
-        cupsFreeDests(1, thread_data->dest);
-        g_free(buffer);
-        g_free(thread_data);
-        return NULL;
-    }
+    /* Wait for the frontend to connect and start sending print data .
+     * Get the connected client fd.
+     * FD path:     socket_fd is already the connected peer , use directly.
+     * Legacy path: socket_fd is a listening socket , call accept().
+    */
 
+    int client_fd;
+    if (thread_data->use_fd){
+        client_fd = thread_data->socket_fd;
+    } else {
+        client_fd = accept(thread_data->socket_fd, NULL, NULL);
+        if (client_fd == -1) {
+            logwarn("print_data_thread: accept failed: %s\n", 
+                strerror(errno));
+            cupsFreeDestInfo(dinfo);
+            close(thread_data->socket_fd);
+            cupsFreeOptions(thread_data->num_options, thread_data->options);
+            cupsFreeDests(1, thread_data->dest);
+            g_free(buffer);
+            g_free(thread_data);
+            return NULL;
+        }
+    }
     /* Read print data from the socket and forward it to CUPS */
     ssize_t bytes_read;
     while ((bytes_read = read(client_fd, buffer, 65536)) > 0) {
@@ -1617,7 +1628,11 @@ static void *print_data_thread(void *data) {
         logerror("Document send failed: %s\n", cupsLastErrorString());
 
     cupsFreeDestInfo(dinfo);
-    close(thread_data->socket_fd);
+    /* when using print_socket method */
+    if (!thread_data->use_fd){
+        close(thread_data->socket_fd);
+    }
+
     cupsFreeOptions(thread_data->num_options, thread_data->options);
     cupsFreeDests(1, thread_data->dest);
     g_free(buffer);
