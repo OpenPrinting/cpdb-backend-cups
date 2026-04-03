@@ -1535,6 +1535,87 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
 
 }
 
+void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
+              char *job_id_str, int *peer_fd, const char *title,
+              char *error_msg, int error_msg_len)
+{
+    ensure_dest_info(p);
+    int num_options = 0;
+    cups_option_t *options = NULL;
+    error_msg[0] = '\0';
+    *peer_fd = -1;
+
+    GVariantIter *iter;
+    g_variant_get(settings, "a(ss)", &iter);
+
+    char *option_name, *option_value;
+    for (int i = 0; i < num_settings; i++)
+    {
+        g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
+        logdebug(" %s : %s\n", option_name, option_value);
+        num_options = cupsAddOption(option_name, option_value,
+                                    num_options, &options);
+    }
+
+    /* Create the CUPS job to obtain a job ID */
+    int job_id = 0;
+    if (cupsCreateDestJob(CUPS_HTTP_DEFAULT, p->dest, p->dinfo,
+                          &job_id, title, num_options, options)
+            != IPP_STATUS_OK)
+    {
+        logwarn("print_fd: job not created: %s\n", cupsLastErrorString());
+        snprintf(error_msg, error_msg_len,
+                 "job not created: %s", cupsLastErrorString());
+        cupsFreeOptions(num_options, options);
+        return;
+    }
+
+    snprintf(job_id_str, JOB_ID_BUFLEN, "%d", job_id);
+
+    /*
+     * Create a connected socket pair.
+     *
+     *   sv[0] — backend data thread reads print data from here.
+     *   sv[1] — returned as *peer_fd; D-Bus handler passes this to
+     *            the frontend via UnixFD. Frontend writes print data
+     *            into it and closes it when done.
+     */
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+    {
+        logwarn("print_fd: socketpair failed: %s\n", strerror(errno));
+        snprintf(error_msg, error_msg_len,
+                 "socketpair failed: %s", strerror(errno));
+        cupsFreeOptions(num_options, options);
+        return;
+    }
+
+    PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
+    cupsCopyDest(p->dest, 0, &thread_data->dest);
+    thread_data->job_id      = job_id;
+    thread_data->num_options = num_options;
+    thread_data->options     = options;
+    thread_data->socket_fd   = sv[0];   /* backend reads from here */
+    thread_data->use_fd      = 1;       /* already connected, skip accept() */
+    snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
+
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0)
+    {
+        logwarn("print_fd: pthread_create failed\n");
+        close(sv[0]);
+        close(sv[1]);
+        cupsFreeOptions(num_options, options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(thread_data);
+        snprintf(error_msg, error_msg_len, "failed to create print thread");
+        return;
+    }
+
+    pthread_detach(thread);
+    *peer_fd = sv[1];   /* frontend writes print data into this */
+}
+
 static void *print_data_thread(void *data) {
     PrintDataThreadData *thread_data = (PrintDataThreadData *)data;
     char *buffer = g_malloc(65536);
