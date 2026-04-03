@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <glib.h>
 #include <string.h>
+#include <gio/gunixfdlist.h>
 
 #include <cups/cups.h>
 
@@ -543,6 +544,61 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_print_fd(PrintBackend *interface,
+                                   GDBusMethodInvocation *invocation,
+                                   const gchar *printer_id,
+                                   int num_settings,
+                                   GVariant *settings,
+                                   const gchar *title,
+                                   gpointer user_data)
+{
+    const char *dialog_name =
+        g_dbus_method_invocation_get_sender(invocation);
+
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
+    if (p == NULL)
+    {
+        g_dbus_method_invocation_return_error(
+            invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
+            "Printer not found: %s", printer_id);
+        return TRUE;
+    }
+
+    char jobid[JOB_ID_BUFLEN];
+    char error_msg[256] = "";
+    int peer_fd = -1;
+    jobid[0] = '\0';
+
+    print_fd(p, num_settings, settings, jobid, &peer_fd,
+             title, error_msg, sizeof(error_msg));
+
+    if (peer_fd == -1)
+    {
+        logwarn("on_handle_print_fd: failed for printer %s: %s\n",
+                printer_id,
+                error_msg[0] ? error_msg : "unknown error");
+        g_dbus_method_invocation_return_error(
+            invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
+            "%s", error_msg[0] ? error_msg : "Failed to create print job");
+        return TRUE;
+    }
+
+    /*
+     * Return peer_fd to the frontend via D-Bus UnixFD.
+     */
+    GUnixFDList *fd_list = g_unix_fd_list_new_from_array(&peer_fd, 1);
+
+    g_dbus_method_invocation_return_value_with_unix_fd_list(
+        invocation,
+        g_variant_new("(sh)", jobid, 0),
+        fd_list);
+
+    g_object_unref(fd_list);
+    close(peer_fd);
+
+    return TRUE;
+}
+
 static gboolean on_handle_get_all_options(PrintBackend *interface,
                                           GDBusMethodInvocation *invocation,
                                           const gchar *printer_name,
@@ -645,6 +701,10 @@ void connect_to_signals()
     g_signal_connect(skeleton,                         //instance
                      "handle-print-socket",              //signal name
                      G_CALLBACK(on_handle_print_socket), //callback
+                     NULL);
+    g_signal_connect(skeleton,                          //instance
+                     "handle-print-fd",                 //signal name
+                     G_CALLBACK(on_handle_print_fd),    //callback
                      NULL);
     g_signal_connect(skeleton,                                //instance
                      "handle-get-printer-state",              //signal name
