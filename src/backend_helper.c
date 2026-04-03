@@ -2108,7 +2108,8 @@ char *get_option_translation(PrinterCUPS *p,
                     "printer-uri", NULL, uri);
     ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
                     "requested-attributes", 1, NULL, req_attrs);
-    response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");    
+	if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
     {
         /* request failed */
         logerror("Request failed: %s\n", cupsLastErrorString());
