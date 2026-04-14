@@ -1675,14 +1675,18 @@ static void *print_data_thread(void *data) {
         cupsFreeOptions(thread_data->num_options, thread_data->options);
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
+        /* Save synchronization fields before freeing */
+        GMutex *mtx  = thread_data->print_threads_mutex;
+        GCond  *cond = thread_data->print_threads_cond;
+        int    *cnt  = thread_data->active_print_threads;
         g_free(thread_data);
         /* Decrement active thread count and signal waiters */
-        if (thread_data->active_print_threads)
+        if (cnt)
         {
-            g_mutex_lock(thread_data->print_threads_mutex);
-            (*thread_data->active_print_threads)--;
-            g_cond_broadcast(thread_data->print_threads_cond);
-            g_mutex_unlock(thread_data->print_threads_mutex);
+            g_mutex_lock(mtx);
+            (*cnt)--;
+            g_cond_broadcast(cond);
+            g_mutex_unlock(mtx);
         }
         return NULL;
     }
@@ -1706,14 +1710,18 @@ static void *print_data_thread(void *data) {
             cupsFreeOptions(thread_data->num_options, thread_data->options);
             cupsFreeDests(1, thread_data->dest);
             g_free(buffer);
+            /* Save synchronization fields before freeing */
+            GMutex *mtx  = thread_data->print_threads_mutex;
+            GCond  *cond = thread_data->print_threads_cond;
+            int    *cnt  = thread_data->active_print_threads;
             g_free(thread_data);
             /* Decrement active thread count and signal waiters */
-            if (thread_data->active_print_threads)
+            if (cnt)
             {
-                g_mutex_lock(thread_data->print_threads_mutex);
-                (*thread_data->active_print_threads)--;
-                g_cond_broadcast(thread_data->print_threads_cond);
-                g_mutex_unlock(thread_data->print_threads_mutex);
+                g_mutex_lock(mtx);
+                (*cnt)--;
+                g_cond_broadcast(cond);
+                g_mutex_unlock(mtx);
             }
             return NULL;
         }
@@ -1753,14 +1761,18 @@ static void *print_data_thread(void *data) {
         cupsFreeOptions(thread_data->num_options, thread_data->options);
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
+        /* Save synchronization fields before freeing */
+        GMutex *mtx  = thread_data->print_threads_mutex;
+        GCond  *cond = thread_data->print_threads_cond;
+        int    *cnt  = thread_data->active_print_threads;
         g_free(thread_data);
         /* Decrement active thread count and signal waiters */
-        if (thread_data->active_print_threads)
+        if (cnt)
         {
-            g_mutex_lock(thread_data->print_threads_mutex);
-            (*thread_data->active_print_threads)--;
-            g_cond_broadcast(thread_data->print_threads_cond);
-            g_mutex_unlock(thread_data->print_threads_mutex);
+            g_mutex_lock(mtx);
+            (*cnt)--;
+            g_cond_broadcast(cond);
+            g_mutex_unlock(mtx);
         }
         return NULL;
     }
@@ -1792,14 +1804,18 @@ static void *print_data_thread(void *data) {
     cupsFreeOptions(thread_data->num_options, thread_data->options);
     cupsFreeDests(1, thread_data->dest);
     g_free(buffer);
+    /* Save synchronization fields before freeing */
+    GMutex *mtx  = thread_data->print_threads_mutex;
+    GCond  *cond = thread_data->print_threads_cond;
+    int    *cnt  = thread_data->active_print_threads;
     g_free(thread_data);
     /* Decrement active thread count and signal waiters */
-    if (thread_data->active_print_threads)
+    if (cnt)
     {
-        g_mutex_lock(thread_data->print_threads_mutex);
-        (*thread_data->active_print_threads)--;
-        g_cond_broadcast(thread_data->print_threads_cond);
-        g_mutex_unlock(thread_data->print_threads_mutex);
+        g_mutex_lock(mtx);
+        (*cnt)--;
+        g_cond_broadcast(cond);
+        g_mutex_unlock(mtx);
     }
     return NULL;
 }
