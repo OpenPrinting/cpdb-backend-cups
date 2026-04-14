@@ -257,7 +257,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
-                  char *error_msg, int error_msg_len);
+                  char *error_msg, int error_msg_len, BackendObj *b);
 
 /**
  * FD-passing variant of print_socket().
@@ -270,7 +270,13 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
  */
 void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
               char *job_id_str, int *peer_fd, const char *title,
-              char *error_msg, int error_msg_len);
+              char *error_msg, int error_msg_len, BackendObj *b);
+
+/**
+ * Wait for all in-flight print threads to complete.
+ * Blocks until active_print_threads == 0.
+ */
+void backend_obj_wait_for_print_threads(BackendObj *b);
 
 gboolean checkRemote(const char *uri);
 char *extractHostFromURI(const char *uri);

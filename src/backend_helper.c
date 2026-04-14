@@ -1414,10 +1414,22 @@ const char *get_printer_state(PrinterCUPS *p)
     return str;
 }
 
+void backend_obj_wait_for_print_threads(BackendObj *b)
+{
+    g_mutex_lock(&b->print_threads_mutex);
+    while (b->active_print_threads > 0)
+    {
+        logdebug("Waiting for %d active print thread(s) to finish...\n",
+                 b->active_print_threads);
+        g_cond_wait(&b->print_threads_cond, &b->print_threads_mutex);
+    }
+    g_mutex_unlock(&b->print_threads_mutex);
+}
+
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
-                  char *error_msg, int error_msg_len)
+                  char *error_msg, int error_msg_len, BackendObj *b)
 {
     ensure_dest_info(p);
     int num_options = 0;
@@ -1522,10 +1534,22 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     thread_data->socket_fd  = socket_fd; /* legacy: thread must call accept() */
     snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
 
+    /* Increment active thread count and set up thread synchronization fields */
+    g_mutex_lock(&b->print_threads_mutex);
+    b->active_print_threads++;
+    g_mutex_unlock(&b->print_threads_mutex);
+
+    thread_data->threads_mutex  = &b->print_threads_mutex;
+    thread_data->threads_cond   = &b->print_threads_cond;
+    thread_data->active_threads = &b->active_print_threads;
+
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0) {
         logwarn("Error creating thread");
+        g_mutex_lock(&b->print_threads_mutex);
+        b->active_print_threads--;
+        g_mutex_unlock(&b->print_threads_mutex);
         close(socket_fd);
         cupsFreeOptions(num_options, options);
         cupsFreeDests(1, thread_data->dest);
@@ -1540,7 +1564,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
 
 void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
               char *job_id_str, int *peer_fd, const char *title,
-              char *error_msg, int error_msg_len)
+              char *error_msg, int error_msg_len, BackendObj *b)
 {
     ensure_dest_info(p);
     int num_options = 0;
@@ -1602,10 +1626,22 @@ void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
     thread_data->use_fd      = 1;       /* already connected, skip accept() */
     snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
 
+    /* Increment active thread count and set up thread synchronization fields */
+    g_mutex_lock(&b->print_threads_mutex);
+    b->active_print_threads++;
+    g_mutex_unlock(&b->print_threads_mutex);
+
+    thread_data->threads_mutex  = &b->print_threads_mutex;
+    thread_data->threads_cond   = &b->print_threads_cond;
+    thread_data->active_threads = &b->active_print_threads;
+
     pthread_t thread;
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0)
     {
         logwarn("print_fd: pthread_create failed\n");
+        g_mutex_lock(&b->print_threads_mutex);
+        b->active_print_threads--;
+        g_mutex_unlock(&b->print_threads_mutex);
         close(sv[0]);
         close(sv[1]);
         cupsFreeOptions(num_options, options);
@@ -1640,6 +1676,14 @@ static void *print_data_thread(void *data) {
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
         g_free(thread_data);
+        /* Decrement active thread count and signal waiters */
+        if (thread_data->active_threads)
+        {
+            g_mutex_lock(thread_data->threads_mutex);
+            (*thread_data->active_threads)--;
+            g_cond_broadcast(thread_data->threads_cond);
+            g_mutex_unlock(thread_data->threads_mutex);
+        }
         return NULL;
     }
 
@@ -1663,6 +1707,14 @@ static void *print_data_thread(void *data) {
             cupsFreeDests(1, thread_data->dest);
             g_free(buffer);
             g_free(thread_data);
+            /* Decrement active thread count and signal waiters */
+            if (thread_data->active_threads)
+            {
+                g_mutex_lock(thread_data->threads_mutex);
+                (*thread_data->active_threads)--;
+                g_cond_broadcast(thread_data->threads_cond);
+                g_mutex_unlock(thread_data->threads_mutex);
+            }
             return NULL;
         }
     }
@@ -1702,6 +1754,14 @@ static void *print_data_thread(void *data) {
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
         g_free(thread_data);
+        /* Decrement active thread count and signal waiters */
+        if (thread_data->active_threads)
+        {
+            g_mutex_lock(thread_data->threads_mutex);
+            (*thread_data->active_threads)--;
+            g_cond_broadcast(thread_data->threads_cond);
+            g_mutex_unlock(thread_data->threads_mutex);
+        }
         return NULL;
     }
 
@@ -1733,6 +1793,14 @@ static void *print_data_thread(void *data) {
     cupsFreeDests(1, thread_data->dest);
     g_free(buffer);
     g_free(thread_data);
+    /* Decrement active thread count and signal waiters */
+    if (thread_data->active_threads)
+    {
+        g_mutex_lock(thread_data->threads_mutex);
+        (*thread_data->active_threads)--;
+        g_cond_broadcast(thread_data->threads_cond);
+        g_mutex_unlock(thread_data->threads_mutex);
+    }
     return NULL;
 }
 

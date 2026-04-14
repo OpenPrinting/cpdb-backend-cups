@@ -360,8 +360,9 @@ static gboolean on_handle_do_listing(PrintBackend *interface,
         remove_frontend(b, dialog_name);
         if (no_frontends(b))
         {
-            // FIXME: this is racy against method calls already in-flight from dbus
-            g_message("No frontends connected .. exiting backend.\n");
+            /* Wait for any in-flight print threads before quitting */
+            backend_obj_wait_for_print_threads(b);
+            logdebug("No frontends connected and no print threads active — exiting.\n");
             g_idle_add_once((GSourceOnceFunc)g_main_loop_quit, loop);
         }
     }
@@ -525,7 +526,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
-    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg));
+    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg), b);
     
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
@@ -570,7 +571,7 @@ static gboolean on_handle_print_fd(PrintBackend *interface,
     jobid[0] = '\0';
 
     print_fd(p, num_settings, settings, jobid, &peer_fd,
-             title, error_msg, sizeof(error_msg));
+             title, error_msg, sizeof(error_msg), b);
 
     if (peer_fd == -1)
     {
