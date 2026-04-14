@@ -1539,9 +1539,9 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     b->active_print_threads++;
     g_mutex_unlock(&b->print_threads_mutex);
 
-    thread_data->threads_mutex  = &b->print_threads_mutex;
-    thread_data->threads_cond   = &b->print_threads_cond;
-    thread_data->active_threads = &b->active_print_threads;
+    thread_data->print_threads_mutex  = &b->print_threads_mutex;
+    thread_data->print_threads_cond   = &b->print_threads_cond;
+    thread_data->active_print_threads = &b->active_print_threads;
 
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
@@ -1631,9 +1631,9 @@ void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
     b->active_print_threads++;
     g_mutex_unlock(&b->print_threads_mutex);
 
-    thread_data->threads_mutex  = &b->print_threads_mutex;
-    thread_data->threads_cond   = &b->print_threads_cond;
-    thread_data->active_threads = &b->active_print_threads;
+    thread_data->print_threads_mutex  = &b->print_threads_mutex;
+    thread_data->print_threads_cond   = &b->print_threads_cond;
+    thread_data->active_print_threads = &b->active_print_threads;
 
     pthread_t thread;
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0)
@@ -1677,12 +1677,12 @@ static void *print_data_thread(void *data) {
         g_free(buffer);
         g_free(thread_data);
         /* Decrement active thread count and signal waiters */
-        if (thread_data->active_threads)
+        if (thread_data->active_print_threads)
         {
-            g_mutex_lock(thread_data->threads_mutex);
-            (*thread_data->active_threads)--;
-            g_cond_broadcast(thread_data->threads_cond);
-            g_mutex_unlock(thread_data->threads_mutex);
+            g_mutex_lock(thread_data->print_threads_mutex);
+            (*thread_data->active_print_threads)--;
+            g_cond_broadcast(thread_data->print_threads_cond);
+            g_mutex_unlock(thread_data->print_threads_mutex);
         }
         return NULL;
     }
@@ -1708,12 +1708,12 @@ static void *print_data_thread(void *data) {
             g_free(buffer);
             g_free(thread_data);
             /* Decrement active thread count and signal waiters */
-            if (thread_data->active_threads)
+            if (thread_data->active_print_threads)
             {
-                g_mutex_lock(thread_data->threads_mutex);
-                (*thread_data->active_threads)--;
-                g_cond_broadcast(thread_data->threads_cond);
-                g_mutex_unlock(thread_data->threads_mutex);
+                g_mutex_lock(thread_data->print_threads_mutex);
+                (*thread_data->active_print_threads)--;
+                g_cond_broadcast(thread_data->print_threads_cond);
+                g_mutex_unlock(thread_data->print_threads_mutex);
             }
             return NULL;
         }
@@ -1755,12 +1755,12 @@ static void *print_data_thread(void *data) {
         g_free(buffer);
         g_free(thread_data);
         /* Decrement active thread count and signal waiters */
-        if (thread_data->active_threads)
+        if (thread_data->active_print_threads)
         {
-            g_mutex_lock(thread_data->threads_mutex);
-            (*thread_data->active_threads)--;
-            g_cond_broadcast(thread_data->threads_cond);
-            g_mutex_unlock(thread_data->threads_mutex);
+            g_mutex_lock(thread_data->print_threads_mutex);
+            (*thread_data->active_print_threads)--;
+            g_cond_broadcast(thread_data->print_threads_cond);
+            g_mutex_unlock(thread_data->print_threads_mutex);
         }
         return NULL;
     }
@@ -1794,12 +1794,12 @@ static void *print_data_thread(void *data) {
     g_free(buffer);
     g_free(thread_data);
     /* Decrement active thread count and signal waiters */
-    if (thread_data->active_threads)
+    if (thread_data->active_print_threads)
     {
-        g_mutex_lock(thread_data->threads_mutex);
-        (*thread_data->active_threads)--;
-        g_cond_broadcast(thread_data->threads_cond);
-        g_mutex_unlock(thread_data->threads_mutex);
+        g_mutex_lock(thread_data->print_threads_mutex);
+        (*thread_data->active_print_threads)--;
+        g_cond_broadcast(thread_data->print_threads_cond);
+        g_mutex_unlock(thread_data->print_threads_mutex);
     }
     return NULL;
 }
