@@ -43,6 +43,9 @@ BackendObj *get_new_BackendObj()
     b->num_frontends = 0;
     b->obj_path = NULL;
     b->default_printer = NULL;
+    g_mutex_init(&b->print_threads_mutex);
+    g_cond_init(&b->print_threads_cond);
+    b->active_print_threads = 0;
     return b;
 }
 
@@ -1640,33 +1643,6 @@ static void *print_data_thread(void *data) {
         return NULL;
     }
 
-    /*
-     * cupsStartDestDocument begins a chunked HTTP POST on this thread's
-     * CUPS_HTTP_DEFAULT connection. cupsWriteRequestData and
-     * cupsFinishDestDocument must be called on the same thread to continue
-     * and finish that same HTTP POST — CUPS_HTTP_DEFAULT is per-thread
-     * (stored in _cups_globals_t), so mixing threads here would use a
-     * different connection and corrupt the stream.
-     */
-    if (cupsStartDestDocument(CUPS_HTTP_DEFAULT,
-                              thread_data->dest, dinfo,
-                              thread_data->job_id,
-                              thread_data->title,
-                              CUPS_FORMAT_AUTO,
-                              thread_data->num_options,
-                              thread_data->options,
-                              1) != HTTP_STATUS_CONTINUE) {
-        logerror("print_data_thread: could not start document: %s\n",
-                 cupsLastErrorString());
-        cupsFreeDestInfo(dinfo);
-        close(thread_data->socket_fd);
-        cupsFreeOptions(thread_data->num_options, thread_data->options);
-        cupsFreeDests(1, thread_data->dest);
-        g_free(buffer);
-        g_free(thread_data);
-        return NULL;
-    }
-
     /* Wait for the frontend to connect and start sending print data .
      * Get the connected client fd.
      * FD path:     socket_fd is already the connected peer , use directly.
@@ -1690,6 +1666,45 @@ static void *print_data_thread(void *data) {
             return NULL;
         }
     }
+
+    /*
+     * cupsStartDestDocument begins a chunked HTTP POST on this thread's
+     * CUPS_HTTP_DEFAULT connection. cupsWriteRequestData and
+     * cupsFinishDestDocument must be called on the same thread to continue
+     * and finish that same HTTP POST — CUPS_HTTP_DEFAULT is per-thread
+     * (stored in _cups_globals_t), so mixing threads here would use a
+     * different connection and corrupt the stream.
+     *
+     * We start the document only after obtaining the client fd (after
+     * accept() for the legacy path, or directly for the FD path). For
+     * the FD path this is critical: the frontend receives sv[1] over
+     * D-Bus asynchronously and may not have started writing yet. Opening
+     * the CUPS HTTP POST before any data is available risks a CUPS
+     * server-side timeout ("No file in print request"). By deferring
+     * cupsStartDestDocument until the client fd is ready, the first
+     * cupsWriteRequestData call follows immediately with no gap.
+     */
+    if (cupsStartDestDocument(CUPS_HTTP_DEFAULT,
+                              thread_data->dest, dinfo,
+                              thread_data->job_id,
+                              thread_data->title,
+                              CUPS_FORMAT_AUTO,
+                              thread_data->num_options,
+                              thread_data->options,
+                              1) != HTTP_STATUS_CONTINUE) {
+        logerror("print_data_thread: could not start document: %s\n",
+                 cupsLastErrorString());
+        cupsFreeDestInfo(dinfo);
+        close(client_fd);
+        if (!thread_data->use_fd)
+            close(thread_data->socket_fd);
+        cupsFreeOptions(thread_data->num_options, thread_data->options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(buffer);
+        g_free(thread_data);
+        return NULL;
+    }
+
     /* Read print data from the socket and forward it to CUPS */
     ssize_t bytes_read;
     while ((bytes_read = read(client_fd, buffer, 65536)) > 0) {

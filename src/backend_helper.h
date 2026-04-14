@@ -80,6 +80,10 @@ typedef struct _BackendObj
 
     int num_frontends;
     char *default_printer;
+
+    GMutex      print_threads_mutex;
+    GCond       print_threads_cond;
+    int         active_print_threads;  /* count of in-flight print threads */
 } BackendObj;
 
 /**
@@ -120,6 +124,9 @@ typedef struct _PrintDataThreadData {
      */
     int  use_fd; 
     char           title[256];
+    GMutex  *print_threads_mutex;
+    GCond   *print_threads_cond;
+    int     *active_print_threads;
 } PrintDataThreadData;
 
 typedef struct _AddressList {
