@@ -43,6 +43,9 @@ BackendObj *get_new_BackendObj()
     b->num_frontends = 0;
     b->obj_path = NULL;
     b->default_printer = NULL;
+    g_mutex_init(&b->print_threads_mutex);
+    g_cond_init(&b->print_threads_cond);
+    b->active_print_threads = 0;
     return b;
 }
 
@@ -1411,10 +1414,22 @@ const char *get_printer_state(PrinterCUPS *p)
     return str;
 }
 
+void backend_obj_wait_for_print_threads(BackendObj *b)
+{
+    g_mutex_lock(&b->print_threads_mutex);
+    while (b->active_print_threads > 0)
+    {
+        logdebug("Waiting for %d active print thread(s) to finish...\n",
+                 b->active_print_threads);
+        g_cond_wait(&b->print_threads_cond, &b->print_threads_mutex);
+    }
+    g_mutex_unlock(&b->print_threads_mutex);
+}
+
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
-                  char *error_msg, int error_msg_len)
+                  char *error_msg, int error_msg_len, BackendObj *b)
 {
     ensure_dest_info(p);
     int num_options = 0;
@@ -1511,13 +1526,26 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     thread_data->job_id     = job_id;
     thread_data->num_options = num_options;
     thread_data->options    = options;
-    thread_data->socket_fd  = socket_fd;
+    thread_data->use_fd    = 0;
+    thread_data->socket_fd  = socket_fd; /* legacy: thread must call accept() */
     snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
+
+    /* Increment active thread count and set up thread synchronization fields */
+    g_mutex_lock(&b->print_threads_mutex);
+    b->active_print_threads++;
+    g_mutex_unlock(&b->print_threads_mutex);
+
+    thread_data->print_threads_mutex  = &b->print_threads_mutex;
+    thread_data->print_threads_cond   = &b->print_threads_cond;
+    thread_data->active_print_threads = &b->active_print_threads;
 
     // Create a thread for handling data transfer to CUPS
     pthread_t thread;
     if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0) {
         logwarn("Error creating thread");
+        g_mutex_lock(&b->print_threads_mutex);
+        b->active_print_threads--;
+        g_mutex_unlock(&b->print_threads_mutex);
         close(socket_fd);
         cupsFreeOptions(num_options, options);
         cupsFreeDests(1, thread_data->dest);
@@ -1528,6 +1556,99 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
 	}
     
 
+}
+
+void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
+              char *job_id_str, int *peer_fd, const char *title,
+              char *error_msg, int error_msg_len, BackendObj *b)
+{
+    ensure_dest_info(p);
+    int num_options = 0;
+    cups_option_t *options = NULL;
+    error_msg[0] = '\0';
+    *peer_fd = -1;
+
+    GVariantIter *iter;
+    g_variant_get(settings, "a(ss)", &iter);
+
+    char *option_name, *option_value;
+    for (int i = 0; i < num_settings; i++)
+    {
+        g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
+        logdebug(" %s : %s\n", option_name, option_value);
+        num_options = cupsAddOption(option_name, option_value,
+                                    num_options, &options);
+    }
+
+    /* Create the CUPS job to obtain a job ID */
+    int job_id = 0;
+    if (cupsCreateDestJob(CUPS_HTTP_DEFAULT, p->dest, p->dinfo,
+                          &job_id, title, num_options, options)
+            != IPP_STATUS_OK)
+    {
+        logwarn("print_fd: job not created: %s\n", cupsLastErrorString());
+        snprintf(error_msg, error_msg_len,
+                 "job not created: %s", cupsLastErrorString());
+        cupsFreeOptions(num_options, options);
+        return;
+    }
+
+    snprintf(job_id_str, JOB_ID_BUFLEN, "%d", job_id);
+
+    /*
+     * Create a connected socket pair.
+     *
+     *   sv[0] — backend data thread reads print data from here.
+     *   sv[1] — returned as *peer_fd; D-Bus handler passes this to
+     *            the frontend via UnixFD. Frontend writes print data
+     *            into it and closes it when done.
+     */
+    int sv[2];
+    if (socketpair(AF_UNIX, SOCK_STREAM, 0, sv) == -1)
+    {
+        logwarn("print_fd: socketpair failed: %s\n", strerror(errno));
+        snprintf(error_msg, error_msg_len,
+                 "socketpair failed: %s", strerror(errno));
+        cupsFreeOptions(num_options, options);
+        return;
+    }
+
+    PrintDataThreadData *thread_data = g_malloc(sizeof(PrintDataThreadData));
+    cupsCopyDest(p->dest, 0, &thread_data->dest);
+    thread_data->job_id      = job_id;
+    thread_data->num_options = num_options;
+    thread_data->options     = options;
+    thread_data->socket_fd   = sv[0];   /* backend reads from here */
+    thread_data->use_fd      = 1;       /* already connected, skip accept() */
+    snprintf(thread_data->title, sizeof(thread_data->title), "%s", title);
+
+    /* Increment active thread count and set up thread synchronization fields */
+    g_mutex_lock(&b->print_threads_mutex);
+    b->active_print_threads++;
+    g_mutex_unlock(&b->print_threads_mutex);
+
+    thread_data->print_threads_mutex  = &b->print_threads_mutex;
+    thread_data->print_threads_cond   = &b->print_threads_cond;
+    thread_data->active_print_threads = &b->active_print_threads;
+
+    pthread_t thread;
+    if (pthread_create(&thread, NULL, print_data_thread, thread_data) != 0)
+    {
+        logwarn("print_fd: pthread_create failed\n");
+        g_mutex_lock(&b->print_threads_mutex);
+        b->active_print_threads--;
+        g_mutex_unlock(&b->print_threads_mutex);
+        close(sv[0]);
+        close(sv[1]);
+        cupsFreeOptions(num_options, options);
+        cupsFreeDests(1, thread_data->dest);
+        g_free(thread_data);
+        snprintf(error_msg, error_msg_len, "failed to create print thread");
+        return;
+    }
+
+    pthread_detach(thread);
+    *peer_fd = sv[1];   /* frontend writes print data into this */
 }
 
 static void *print_data_thread(void *data) {
@@ -1550,8 +1671,56 @@ static void *print_data_thread(void *data) {
         cupsFreeOptions(thread_data->num_options, thread_data->options);
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
+        /* Save synchronization fields before freeing */
+        GMutex *mtx  = thread_data->print_threads_mutex;
+        GCond  *cond = thread_data->print_threads_cond;
+        int    *cnt  = thread_data->active_print_threads;
         g_free(thread_data);
+        /* Decrement active thread count and signal waiters */
+        if (cnt)
+        {
+            g_mutex_lock(mtx);
+            (*cnt)--;
+            g_cond_broadcast(cond);
+            g_mutex_unlock(mtx);
+        }
         return NULL;
+    }
+
+    /* Wait for the frontend to connect and start sending print data .
+     * Get the connected client fd.
+     * FD path:     socket_fd is already the connected peer , use directly.
+     * Legacy path: socket_fd is a listening socket , call accept().
+    */
+
+    int client_fd;
+    if (thread_data->use_fd){
+        client_fd = thread_data->socket_fd;
+    } else {
+        client_fd = accept(thread_data->socket_fd, NULL, NULL);
+        if (client_fd == -1) {
+            logwarn("print_data_thread: accept failed: %s\n", 
+                strerror(errno));
+            cupsFreeDestInfo(dinfo);
+            close(thread_data->socket_fd);
+            cupsFreeOptions(thread_data->num_options, thread_data->options);
+            cupsFreeDests(1, thread_data->dest);
+            g_free(buffer);
+            /* Save synchronization fields before freeing */
+            GMutex *mtx  = thread_data->print_threads_mutex;
+            GCond  *cond = thread_data->print_threads_cond;
+            int    *cnt  = thread_data->active_print_threads;
+            g_free(thread_data);
+            /* Decrement active thread count and signal waiters */
+            if (cnt)
+            {
+                g_mutex_lock(mtx);
+                (*cnt)--;
+                g_cond_broadcast(cond);
+                g_mutex_unlock(mtx);
+            }
+            return NULL;
+        }
     }
 
     /*
@@ -1561,6 +1730,15 @@ static void *print_data_thread(void *data) {
      * and finish that same HTTP POST — CUPS_HTTP_DEFAULT is per-thread
      * (stored in _cups_globals_t), so mixing threads here would use a
      * different connection and corrupt the stream.
+     *
+     * We start the document only after obtaining the client fd (after
+     * accept() for the legacy path, or directly for the FD path). For
+     * the FD path this is critical: the frontend receives sv[1] over
+     * D-Bus asynchronously and may not have started writing yet. Opening
+     * the CUPS HTTP POST before any data is available risks a CUPS
+     * server-side timeout ("No file in print request"). By deferring
+     * cupsStartDestDocument until the client fd is ready, the first
+     * cupsWriteRequestData call follows immediately with no gap.
      */
     if (cupsStartDestDocument(CUPS_HTTP_DEFAULT,
                               thread_data->dest, dinfo,
@@ -1573,24 +1751,25 @@ static void *print_data_thread(void *data) {
         logerror("print_data_thread: could not start document: %s\n",
                  cupsLastErrorString());
         cupsFreeDestInfo(dinfo);
-        close(thread_data->socket_fd);
+        close(client_fd);
+        if (!thread_data->use_fd)
+            close(thread_data->socket_fd);
         cupsFreeOptions(thread_data->num_options, thread_data->options);
         cupsFreeDests(1, thread_data->dest);
         g_free(buffer);
+        /* Save synchronization fields before freeing */
+        GMutex *mtx  = thread_data->print_threads_mutex;
+        GCond  *cond = thread_data->print_threads_cond;
+        int    *cnt  = thread_data->active_print_threads;
         g_free(thread_data);
-        return NULL;
-    }
-
-    /* Wait for the frontend to connect and start sending print data */
-    int client_fd = accept(thread_data->socket_fd, NULL, NULL);
-    if (client_fd == -1) {
-        logwarn("print_data_thread: accept failed\n");
-        cupsFreeDestInfo(dinfo);
-        close(thread_data->socket_fd);
-        cupsFreeOptions(thread_data->num_options, thread_data->options);
-        cupsFreeDests(1, thread_data->dest);
-        g_free(buffer);
-        g_free(thread_data);
+        /* Decrement active thread count and signal waiters */
+        if (cnt)
+        {
+            g_mutex_lock(mtx);
+            (*cnt)--;
+            g_cond_broadcast(cond);
+            g_mutex_unlock(mtx);
+        }
         return NULL;
     }
 
@@ -1613,11 +1792,27 @@ static void *print_data_thread(void *data) {
         logerror("Document send failed: %s\n", cupsLastErrorString());
 
     cupsFreeDestInfo(dinfo);
-    close(thread_data->socket_fd);
+    /* when using print_socket method */
+    if (!thread_data->use_fd){
+        close(thread_data->socket_fd);
+    }
+
     cupsFreeOptions(thread_data->num_options, thread_data->options);
     cupsFreeDests(1, thread_data->dest);
     g_free(buffer);
+    /* Save synchronization fields before freeing */
+    GMutex *mtx  = thread_data->print_threads_mutex;
+    GCond  *cond = thread_data->print_threads_cond;
+    int    *cnt  = thread_data->active_print_threads;
     g_free(thread_data);
+    /* Decrement active thread count and signal waiters */
+    if (cnt)
+    {
+        g_mutex_lock(mtx);
+        (*cnt)--;
+        g_cond_broadcast(cond);
+        g_mutex_unlock(mtx);
+    }
     return NULL;
 }
 

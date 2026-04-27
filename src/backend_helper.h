@@ -80,6 +80,10 @@ typedef struct _BackendObj
 
     int num_frontends;
     char *default_printer;
+
+    GMutex      print_threads_mutex;
+    GCond       print_threads_cond;
+    int         active_print_threads;  /* count of in-flight print threads */
 } BackendObj;
 
 /**
@@ -111,7 +115,18 @@ typedef struct _PrintDataThreadData {
     int            num_options;
     cups_option_t *options;
     int            socket_fd;
+    /*
+     * use_fd == 0  Legacy socket-file path: socket_fd is a listening
+     *              socket; the thread must call accept() to get the
+     *              connected client fd.
+     * use_fd == 1  FD-passing path: socket_fd is already the connected
+     *              peer end from socketpair(); used directly, no accept().
+     */
+    int  use_fd; 
     char           title[256];
+    GMutex  *print_threads_mutex;
+    GCond   *print_threads_cond;
+    int     *active_print_threads;
 } PrintDataThreadData;
 
 typedef struct _AddressList {
@@ -242,7 +257,26 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
-                  char *error_msg, int error_msg_len);
+                  char *error_msg, int error_msg_len, BackendObj *b);
+
+/**
+ * FD-passing variant of print_socket().
+ *
+ * Creates a socketpair(), starts the print-data thread on one end, and
+ * returns the other end in *peer_fd. The D-Bus handler passes *peer_fd
+ * to the frontend via D-Bus UnixFD.
+ *
+ * On failure *peer_fd is -1 and error_msg is populated.
+ */
+void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
+              char *job_id_str, int *peer_fd, const char *title,
+              char *error_msg, int error_msg_len, BackendObj *b);
+
+/**
+ * Wait for all in-flight print threads to complete.
+ * Blocks until active_print_threads == 0.
+ */
+void backend_obj_wait_for_print_threads(BackendObj *b);
 
 gboolean checkRemote(const char *uri);
 char *extractHostFromURI(const char *uri);

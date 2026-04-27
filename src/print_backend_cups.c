@@ -2,6 +2,7 @@
 #include <stdlib.h>
 #include <glib.h>
 #include <string.h>
+#include <gio/gunixfdlist.h>
 
 #include <cups/cups.h>
 
@@ -359,8 +360,9 @@ static gboolean on_handle_do_listing(PrintBackend *interface,
         remove_frontend(b, dialog_name);
         if (no_frontends(b))
         {
-            // FIXME: this is racy against method calls already in-flight from dbus
-            g_message("No frontends connected .. exiting backend.\n");
+            /* Wait for any in-flight print threads before quitting */
+            backend_obj_wait_for_print_threads(b);
+            logdebug("No frontends connected and no print threads active — exiting.\n");
             g_idle_add_once((GSourceOnceFunc)g_main_loop_quit, loop);
         }
     }
@@ -524,7 +526,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
-    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg));
+    print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg), b);
     
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
@@ -539,6 +541,61 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
 
     // Complete the D-Bus method call with the result
     print_backend_complete_print_socket(interface, invocation, jobid, socket);
+
+    return TRUE;
+}
+
+static gboolean on_handle_print_fd(PrintBackend *interface,
+                                   GDBusMethodInvocation *invocation,
+                                   const gchar *printer_id,
+                                   int num_settings,
+                                   GVariant *settings,
+                                   const gchar *title,
+                                   gpointer user_data)
+{
+    const char *dialog_name =
+        g_dbus_method_invocation_get_sender(invocation);
+
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
+    if (p == NULL)
+    {
+        g_dbus_method_invocation_return_error(
+            invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
+            "Printer not found: %s", printer_id);
+        return TRUE;
+    }
+
+    char jobid[JOB_ID_BUFLEN];
+    char error_msg[256] = "";
+    int peer_fd = -1;
+    jobid[0] = '\0';
+
+    print_fd(p, num_settings, settings, jobid, &peer_fd,
+             title, error_msg, sizeof(error_msg), b);
+
+    if (peer_fd == -1)
+    {
+        logwarn("on_handle_print_fd: failed for printer %s: %s\n",
+                printer_id,
+                error_msg[0] ? error_msg : "unknown error");
+        g_dbus_method_invocation_return_error(
+            invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
+            "%s", error_msg[0] ? error_msg : "Failed to create print job");
+        return TRUE;
+    }
+
+    /*
+     * Return peer_fd to the frontend via D-Bus UnixFD.
+     */
+    GUnixFDList *fd_list = g_unix_fd_list_new_from_array(&peer_fd, 1);
+
+    g_dbus_method_invocation_return_value_with_unix_fd_list(
+        invocation,
+        g_variant_new("(sh)", jobid, 0),
+        fd_list);
+
+    g_object_unref(fd_list);
+
 
     return TRUE;
 }
@@ -645,6 +702,10 @@ void connect_to_signals()
     g_signal_connect(skeleton,                         //instance
                      "handle-print-socket",              //signal name
                      G_CALLBACK(on_handle_print_socket), //callback
+                     NULL);
+    g_signal_connect(skeleton,                          //instance
+                     "handle-print-fd",                 //signal name
+                     G_CALLBACK(on_handle_print_fd),    //callback
                      NULL);
     g_signal_connect(skeleton,                                //instance
                      "handle-get-printer-state",              //signal name
