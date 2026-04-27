@@ -595,7 +595,7 @@ static gboolean on_handle_print_fd(PrintBackend *interface,
         fd_list);
 
     g_object_unref(fd_list);
-    close(peer_fd);
+
 
     return TRUE;
 }
