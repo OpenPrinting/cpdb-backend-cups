@@ -28,15 +28,27 @@ GMainLoop *loop;
 
 void update_printer_lists()
 {
+    g_mutex_lock(&b->dialogs_mutex);
     GHashTableIter iter;
     gpointer key, value;
+    GList *dialog_names = NULL;
 
     g_hash_table_iter_init(&iter, b->dialogs);
     while (g_hash_table_iter_next(&iter, &key, &value))
     {
-        const char *dialog_name = key;
-        refresh_printer_list(b, dialog_name);
+        dialog_names = g_list_prepend(dialog_names, g_strdup(key));
     }
+    
+    GList *l;
+    for (l = dialog_names; l != NULL; l = l->next)
+    {
+        const char *dialog_name = l->data;
+        g_mutex_unlock(&b->dialogs_mutex);
+        refresh_printer_list(b, dialog_name);
+        g_mutex_lock(&b->dialogs_mutex);
+    }
+    g_list_free_full(dialog_names, g_free);
+    g_mutex_unlock(&b->dialogs_mutex);
 }
 
 static void
@@ -51,20 +63,32 @@ on_printer_state_changed (CupsNotifier *object,
 {
     logdebug("Printer state change on printer %s: %s\n", printer, text);
     
+    g_mutex_lock(&b->dialogs_mutex);
     GHashTableIter iter;
     gpointer key, value;
+    GList *dialog_names = NULL;
 
     g_hash_table_iter_init(&iter, b->dialogs);
     while (g_hash_table_iter_next(&iter, &key, &value))
     {
-        const char *dialog_name = key;
+        dialog_names = g_list_prepend(dialog_names, g_strdup(key));
+    }
+    
+    GList *l;
+    for (l = dialog_names; l != NULL; l = l->next)
+    {
+        const char *dialog_name = l->data;
         PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer);
         if(p == NULL)
             continue;
+        g_mutex_unlock(&b->dialogs_mutex);
         const char *state = get_printer_state(p);
+        g_mutex_lock(&b->dialogs_mutex);
         send_printer_state_changed_signal(b, dialog_name, printer,
                                             state, printer_is_accepting_jobs);
     }
+    g_list_free_full(dialog_names, g_free);
+    g_mutex_unlock(&b->dialogs_mutex);
 }
 
 static void
@@ -174,6 +198,7 @@ static gboolean on_handle_get_all_printers(PrintBackend *interface,
                                            GDBusMethodInvocation *invocation,
                                            gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     int num_printers;
     GHashTableIter iter;
     gpointer key, value;
@@ -185,7 +210,9 @@ static gboolean on_handle_get_all_printers(PrintBackend *interface,
     const char *state;
     char *name, *info, *location, *make;
 
+    g_mutex_unlock(&b->dialogs_mutex);
     GHashTable *table = cups_get_all_printers();
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
 
     add_frontend(b, dialog_name);
@@ -194,7 +221,7 @@ static gboolean on_handle_get_all_printers(PrintBackend *interface,
     {
         printers = g_variant_new_array(G_VARIANT_TYPE ("(v)"), NULL, 0);
         print_backend_complete_get_all_printers(interface, invocation, 0, printers);
-        return TRUE;
+        goto unlock;
     }
 
     g_hash_table_iter_init(&iter, table);
@@ -225,6 +252,8 @@ static gboolean on_handle_get_all_printers(PrintBackend *interface,
     printers = g_variant_builder_end(&builder);
 
     print_backend_complete_get_all_printers(interface, invocation, num_printers, printers);
+unlock:
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -232,6 +261,7 @@ static gboolean on_handle_get_filtered_printer_list(PrintBackend *interface,
                                            GDBusMethodInvocation *invocation,
                                            gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     int num_printers;
     GHashTableIter iter;
     gpointer key, value;
@@ -244,15 +274,20 @@ static gboolean on_handle_get_filtered_printer_list(PrintBackend *interface,
     char *name, *info, *location, *make;
 
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
-    GHashTable *table = cups_get_printers(get_hide_temp(b, dialog_name), get_hide_remote(b, dialog_name));
+    gboolean hide_temp = get_hide_temp(b, dialog_name);
+    gboolean hide_remote = get_hide_remote(b, dialog_name);
+    g_mutex_unlock(&b->dialogs_mutex);
 
+    GHashTable *table = cups_get_printers(hide_temp, hide_remote);
+
+    g_mutex_lock(&b->dialogs_mutex);
     add_frontend(b, dialog_name);
     num_printers = g_hash_table_size(table);
     if (num_printers == 0)
     {
         printers = g_variant_new_array(G_VARIANT_TYPE ("(v)"), NULL, 0);
         print_backend_complete_get_filtered_printer_list(interface, invocation, 0, printers);
-        return TRUE;
+        goto unlock;
     }
 
     g_hash_table_iter_init(&iter, table);
@@ -283,6 +318,8 @@ static gboolean on_handle_get_filtered_printer_list(PrintBackend *interface,
     printers = g_variant_builder_end(&builder);
 
     print_backend_complete_get_filtered_printer_list(interface, invocation, num_printers, printers);
+unlock:
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -292,14 +329,25 @@ static gboolean on_handle_get_all_translations(PrintBackend *interface,
                                                const gchar *locale,
                                                gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     PrinterCUPS *p;
     GVariant *translations;
     const char *dialog_name;
 
     dialog_name = g_dbus_method_invocation_get_sender(invocation);
     p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    g_mutex_unlock(&b->dialogs_mutex);
+    
     translations = get_printer_translations(p, locale);
+    
+    g_mutex_lock(&b->dialogs_mutex);
     print_backend_complete_get_all_translations(interface, invocation, translations);
+    g_mutex_unlock(&b->dialogs_mutex);
 
     return TRUE;
 }
@@ -328,13 +376,18 @@ int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
     const char *dialog_name = (const char *)_dialog_name;
     char *printer_name = get_printer_name_for_cups_dest(dest);
 
+    g_mutex_lock(&b->dialogs_mutex);
     if (dialog_contains_printer(b, dialog_name, printer_name))
     {
+        g_mutex_unlock(&b->dialogs_mutex);
         g_message("%s already sent.\n", printer_name);
+        g_free(printer_name);
         return 1;
     }
 
     add_printer_to_dialog(b, dialog_name, dest);
+    g_mutex_unlock(&b->dialogs_mutex);
+    
     send_printer_added_signal(b, dialog_name, dest);
     g_message("     Sent notification for printer %s\n", printer_name);
 
@@ -351,7 +404,7 @@ static gboolean on_handle_do_listing(PrintBackend *interface,
                                     gboolean is_listed,
                                     gpointer not_used)
 {
-
+    g_mutex_lock(&b->dialogs_mutex);
     if(!is_listed){
         const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
         Dialog *d = find_dialog(b, dialog_name);
@@ -363,7 +416,9 @@ static gboolean on_handle_do_listing(PrintBackend *interface,
         if (no_frontends(b))
         {
             /* Wait for any in-flight print threads before quitting */
+            g_mutex_unlock(&b->dialogs_mutex);
             backend_obj_wait_for_print_threads(b);
+            g_mutex_lock(&b->dialogs_mutex);
             logdebug("No frontends connected and no print threads active — exiting.\n");
             g_idle_add_once((GSourceOnceFunc)g_main_loop_quit, loop);
         }
@@ -371,6 +426,7 @@ static gboolean on_handle_do_listing(PrintBackend *interface,
 
 out:
     print_backend_complete_do_listing(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -379,13 +435,16 @@ static gboolean on_handle_show_remote_printers(PrintBackend *interface,
                                     gboolean is_visible,
                                     gpointer not_used)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     if (!is_visible){
         if (!get_hide_remote(b, dialog_name))
         {
             set_dialog_cancel(b, dialog_name);
             set_hide_remote_printers(b, dialog_name);
+            g_mutex_unlock(&b->dialogs_mutex);
             refresh_printer_list(b, dialog_name);
+            g_mutex_lock(&b->dialogs_mutex);
         }
     }
     else if (is_visible){
@@ -393,10 +452,13 @@ static gboolean on_handle_show_remote_printers(PrintBackend *interface,
         {
             set_dialog_cancel(b, dialog_name);
             unset_hide_remote_printers(b, dialog_name);
+            g_mutex_unlock(&b->dialogs_mutex);
             refresh_printer_list(b, dialog_name);
+            g_mutex_lock(&b->dialogs_mutex);
         }
     }
     print_backend_complete_show_remote_printers(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -406,13 +468,16 @@ static gboolean on_handle_show_temporary_printers(PrintBackend *interface,
                                     gboolean is_visible,
                                     gpointer not_used)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     if (!is_visible){
         if (!get_hide_temp(b, dialog_name))
         {
             set_dialog_cancel(b, dialog_name);
             set_hide_temp_printers(b, dialog_name);
+            g_mutex_unlock(&b->dialogs_mutex);
             refresh_printer_list(b, dialog_name);
+            g_mutex_lock(&b->dialogs_mutex);
         }
     }
     else if (is_visible){
@@ -420,10 +485,13 @@ static gboolean on_handle_show_temporary_printers(PrintBackend *interface,
         {
             set_dialog_cancel(b, dialog_name);
             unset_hide_temp_printers(b, dialog_name);
+            g_mutex_unlock(&b->dialogs_mutex);
             refresh_printer_list(b, dialog_name);
+            g_mutex_lock(&b->dialogs_mutex);
         }
     }
     print_backend_complete_show_temporary_printers(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -432,10 +500,17 @@ static gboolean on_handle_is_accepting_jobs(PrintBackend *interface,
                                             const gchar *printer_name,
                                             gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     cups_dest_t *dest = get_dest_by_name(b, dialog_name, printer_name);
-    g_assert_nonnull(dest);
-    print_backend_complete_is_accepting_jobs(interface, invocation, cups_is_accepting_jobs(dest));
+    if (dest == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    gboolean accepting = cups_is_accepting_jobs(dest);
+    print_backend_complete_is_accepting_jobs(interface, invocation, accepting);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -444,11 +519,20 @@ static gboolean on_handle_get_printer_state(PrintBackend *interface,
                                             const gchar *printer_name,
                                             gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    g_mutex_unlock(&b->dialogs_mutex);
     const char *state = get_printer_state(p);
+    g_mutex_lock(&b->dialogs_mutex);
     logdebug("%s is %s\n", printer_name, state);
     print_backend_complete_get_printer_state(interface, invocation, state);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -459,12 +543,21 @@ static gboolean on_handle_get_option_translation(PrintBackend *interface,
                                                  const gchar *locale,
                                                  gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    g_mutex_unlock(&b->dialogs_mutex);
     char *translation = get_option_translation(p, option_name, locale);
+    g_mutex_lock(&b->dialogs_mutex);
     if (translation == NULL)
         translation = g_strdup(option_name);
     print_backend_complete_get_option_translation(interface, invocation, translation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -476,13 +569,22 @@ static gboolean on_handle_get_choice_translation(PrintBackend *interface,
                                                  const gchar *locale,
                                                  gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    g_mutex_unlock(&b->dialogs_mutex);
     char *translation = get_choice_translation(p, option_name,
                                                 choice_name, locale);
+    g_mutex_lock(&b->dialogs_mutex);
     if (translation == NULL)
         translation = g_strdup(choice_name);
     print_backend_complete_get_choice_translation(interface, invocation, translation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -504,9 +606,16 @@ static gboolean on_handle_ping(PrintBackend *interface,
                                const gchar *printer_name,
                                gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
-    (void)get_printer_by_name(b, dialog_name, printer_name);
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
     print_backend_complete_ping(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -518,8 +627,15 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
                                      const gchar *title,
                                      gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
+
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
 
     // Call the renamed function
     char jobid[JOB_ID_BUFLEN];
@@ -528,12 +644,15 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     jobid[0] = '\0';   // prevent garbage being sent over D-Bus on failure
     socket[0] = '\0';  // used below to detect if print_socket succeeded
 
+    g_mutex_unlock(&b->dialogs_mutex);
     print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg), b);
+    g_mutex_lock(&b->dialogs_mutex);
     
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
     if (socket[0] == '\0') {
         logwarn("print_socket failed for printer %s\n", printer_id);
+        g_mutex_unlock(&b->dialogs_mutex);
         g_dbus_method_invocation_return_error(invocation,
                                             G_IO_ERROR,
                                             G_IO_ERROR_FAILED,
@@ -544,6 +663,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     // Complete the D-Bus method call with the result
     print_backend_complete_print_socket(interface, invocation, jobid, socket);
 
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -555,12 +675,14 @@ static gboolean on_handle_print_fd(PrintBackend *interface,
                                    const gchar *title,
                                    gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name =
         g_dbus_method_invocation_get_sender(invocation);
 
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_id);
     if (p == NULL)
     {
+        g_mutex_unlock(&b->dialogs_mutex);
         g_dbus_method_invocation_return_error(
             invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
             "Printer not found: %s", printer_id);
@@ -572,14 +694,17 @@ static gboolean on_handle_print_fd(PrintBackend *interface,
     int peer_fd = -1;
     jobid[0] = '\0';
 
+    g_mutex_unlock(&b->dialogs_mutex);
     print_fd(p, num_settings, settings, jobid, &peer_fd,
              title, error_msg, sizeof(error_msg), b);
+    g_mutex_lock(&b->dialogs_mutex);
 
     if (peer_fd == -1)
     {
         logwarn("on_handle_print_fd: failed for printer %s: %s\n",
                 printer_id,
                 error_msg[0] ? error_msg : "unknown error");
+        g_mutex_unlock(&b->dialogs_mutex);
         g_dbus_method_invocation_return_error(
             invocation, G_IO_ERROR, G_IO_ERROR_FAILED,
             "%s", error_msg[0] ? error_msg : "Failed to create print job");
@@ -598,7 +723,7 @@ static gboolean on_handle_print_fd(PrintBackend *interface,
 
     g_object_unref(fd_list);
 
-
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 
@@ -607,8 +732,16 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
                                           const gchar *printer_name,
                                           gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation); /// potential risk
     PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_mutex_unlock(&b->dialogs_mutex);
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+    
+    g_mutex_unlock(&b->dialogs_mutex);
     
     Media *medias;
     int media_count = get_all_media(p, &medias);
@@ -637,7 +770,9 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
     }
     variant = g_variant_builder_end(builder);
     
+    g_mutex_lock(&b->dialogs_mutex);
     print_backend_complete_get_all_options(interface, invocation, count, variant, media_count, media_variant);
+    g_mutex_unlock(&b->dialogs_mutex);
     free_options(count, options);
     return TRUE;
 }
@@ -656,10 +791,12 @@ static gboolean on_handle_keep_alive(PrintBackend *interface,
                                      GDBusMethodInvocation *invocation,
                                      gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     Dialog *d = find_dialog(b, dialog_name);
-    d->keep_alive = TRUE;
+    if (d) d->keep_alive = TRUE;
     print_backend_complete_keep_alive(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 static gboolean on_handle_replace(PrintBackend *interface,
@@ -667,6 +804,7 @@ static gboolean on_handle_replace(PrintBackend *interface,
                                   const gchar *previous_name,
                                   gpointer user_data)
 {
+    g_mutex_lock(&b->dialogs_mutex);
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
     Dialog *d = find_dialog(b, previous_name);
     if (d != NULL)
@@ -676,6 +814,7 @@ static gboolean on_handle_replace(PrintBackend *interface,
         g_message("Replaced %s --> %s\n", previous_name, dialog_name);
     }
     print_backend_complete_replace(interface, invocation);
+    g_mutex_unlock(&b->dialogs_mutex);
     return TRUE;
 }
 void connect_to_signals()

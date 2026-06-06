@@ -40,6 +40,7 @@ BackendObj *get_new_BackendObj()
     b->dialogs = g_hash_table_new_full(g_str_hash, g_str_equal,
                                        (GDestroyNotify)free_string,
                                        (GDestroyNotify)free_Dialog);
+    g_mutex_init(&b->dialogs_mutex);
     b->num_frontends = 0;
     b->obj_path = NULL;
     b->default_printer = NULL;
@@ -366,6 +367,7 @@ void cancel_subscription (int id)
 
 gboolean dialog_contains_printer(BackendObj *b, const char *dialog_name, const char *printer_name)
 {
+    // called with dialogs_mutex held
     Dialog *d = g_hash_table_lookup(b->dialogs, dialog_name);
 
     if (d == NULL || d->printers == NULL)
@@ -383,6 +385,7 @@ gboolean dialog_contains_printer(BackendObj *b, const char *dialog_name, const c
 
 PrinterCUPS *add_printer_to_dialog(BackendObj *b, const char *dialog_name, const cups_dest_t *dest)
 {
+    // called with dialogs_mutex held
     char *printer_name = get_printer_name_for_cups_dest(dest);
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (d == NULL)
@@ -401,6 +404,7 @@ PrinterCUPS *add_printer_to_dialog(BackendObj *b, const char *dialog_name, const
 
 void remove_printer_from_dialog(BackendObj *b, const char *dialog_name, const char *printer_name)
 {
+    // called with dialogs_mutex held
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (d == NULL)
     {
@@ -473,6 +477,7 @@ void send_printer_state_changed_signal(BackendObj *b, const char *dialog_name, c
 
 void notify_removed_printers(BackendObj *b, const char *dialog_name, GHashTable *new_table)
 {
+    // called with dialogs_mutex held
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (!d) return;
 
@@ -495,6 +500,7 @@ void notify_removed_printers(BackendObj *b, const char *dialog_name, GHashTable 
 
 void notify_added_printers(BackendObj *b, const char *dialog_name, GHashTable *new_table)
 {
+    // called with dialogs_mutex held
     GHashTableIter iter;
     Dialog *d = (Dialog *)g_hash_table_lookup(b->dialogs, dialog_name);
     if (!d) return;
@@ -529,10 +535,18 @@ gboolean get_hide_temp(BackendObj *b, const char *dialog_name)
 }
 void refresh_printer_list(BackendObj *b, const char *dialog_name)
 {
+    g_mutex_lock(&b->dialogs_mutex);
+    gboolean hide_temp = get_hide_temp(b, dialog_name);
+    gboolean hide_remote = get_hide_remote(b, dialog_name);
+    g_mutex_unlock(&b->dialogs_mutex);
+
     GHashTable *new_printers;
-    new_printers = cups_get_printers(get_hide_temp(b, dialog_name), get_hide_remote(b, dialog_name));
+    new_printers = cups_get_printers(hide_temp, hide_remote);
+
+    g_mutex_lock(&b->dialogs_mutex);
     notify_removed_printers(b, dialog_name, new_printers);
     notify_added_printers(b, dialog_name, new_printers);
+    g_mutex_unlock(&b->dialogs_mutex);
 }
 GHashTable *get_dialog_printers(BackendObj *b, const char *dialog_name)
 {
@@ -546,6 +560,7 @@ GHashTable *get_dialog_printers(BackendObj *b, const char *dialog_name)
 }
 PrinterCUPS *get_printer_by_name(BackendObj *b, const char *dialog_name, const char *printer_name)
 {
+    // called with dialogs_mutex held
     GHashTable *printers = get_dialog_printers(b, dialog_name);
     g_assert_nonnull(printers);
     PrinterCUPS *p = (g_hash_table_lookup(printers, printer_name));
@@ -558,6 +573,7 @@ PrinterCUPS *get_printer_by_name(BackendObj *b, const char *dialog_name, const c
 }
 cups_dest_t *get_dest_by_name(BackendObj *b, const char *dialog_name, const char *printer_name)
 {
+    // called with dialogs_mutex held
     GHashTable *printers = get_dialog_printers(b, dialog_name);
     g_assert_nonnull(printers);
     PrinterCUPS *p = (g_hash_table_lookup(printers, printer_name));
