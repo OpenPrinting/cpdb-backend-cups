@@ -59,6 +59,8 @@ on_printer_state_changed (CupsNotifier *object,
     {
         const char *dialog_name = key;
         PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer);
+        if(p == NULL)
+            continue;
         const char *state = get_printer_state(p);
         send_printer_state_changed_signal(b, dialog_name, printer,
                                             state, printer_is_accepting_jobs);
