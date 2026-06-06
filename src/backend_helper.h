@@ -84,6 +84,7 @@ typedef struct _BackendObj
     GMutex      print_threads_mutex;
     GCond       print_threads_cond;
     int         active_print_threads;  /* count of in-flight print threads */
+    GMutex      dialogs_mutex;
 } BackendObj;
 
 /**
