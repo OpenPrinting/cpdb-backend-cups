@@ -647,7 +647,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     g_mutex_unlock(&b->dialogs_mutex);
     print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg), b);
     g_mutex_lock(&b->dialogs_mutex);
-    
+
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
     if (socket[0] == '\0') {
@@ -777,6 +777,38 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
     return TRUE;
 }
 
+static gboolean on_handle_get_all_capabilities(PrintBackend *interface,
+                                               GDBusMethodInvocation *invocation,
+                                               const gchar *printer_name,
+                                               gpointer user_data)
+{
+    const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
+    PrinterCUPS *p = get_printer_by_name(b, dialog_name, printer_name);
+    if (p == NULL) {
+        g_dbus_method_invocation_return_error(invocation, G_IO_ERROR, G_IO_ERROR_FAILED, "Printer not found");
+        return TRUE;
+    }
+
+    Media *medias;
+    int media_count = get_all_media(p, &medias);
+    GVariantBuilder *media_builder = g_variant_builder_new(G_VARIANT_TYPE("a(siiia(iiii))"));
+    for (int i = 0; i < media_count; i++)
+        g_variant_builder_add_value(media_builder, pack_media(&medias[i]));
+    GVariant *media_variant = g_variant_builder_end(media_builder);
+
+    Capability *caps;
+    int count = get_all_capabilities(p, &caps);
+    GVariantBuilder *builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssisia(s)ii)"));
+    for (int i = 0; i < count; i++)
+        g_variant_builder_add_value(builder, pack_capability(&caps[i]));
+    GVariant *variant = g_variant_builder_end(builder);
+
+    print_backend_complete_get_all_capabilities(interface, invocation, count, variant,
+                                                media_count, media_variant);
+    free_capabilities(count, caps);
+    return TRUE;
+}
+
 static gboolean on_handle_get_default_printer(PrintBackend *interface,
                                               GDBusMethodInvocation *invocation,
                                               gpointer user_data)
@@ -831,6 +863,10 @@ void connect_to_signals()
     g_signal_connect(skeleton,                              //instance
                      "handle-get-all-options",              //signal name
                      G_CALLBACK(on_handle_get_all_options), //callback
+                     NULL);
+    g_signal_connect(skeleton,                                    //instance
+                     "handle-get-all-capabilities",              //signal name
+                     G_CALLBACK(on_handle_get_all_capabilities), //callback
                      NULL);
     g_signal_connect(skeleton,                   //instance
                      "handle-ping",              //signal name

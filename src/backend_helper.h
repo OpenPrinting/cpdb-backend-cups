@@ -98,6 +98,32 @@ typedef struct _Option
     char *default_value;
 } Option;
 
+typedef enum _CapabilityType
+{
+    CPDB_CAP_BOOLEAN,
+    CPDB_CAP_INTEGER,
+    CPDB_CAP_RANGE,
+    CPDB_CAP_ENUM,
+    CPDB_CAP_KEYWORD,
+    CPDB_CAP_RESOLUTION,
+    CPDB_CAP_STRING
+} CapabilityType;
+
+/**
+ * Like Option, but carries the real IPP type instead of forcing the
+ * caller to re-guess it from supported_values.
+ */
+typedef struct _Capability
+{
+    char *option_name;
+    CapabilityType type;
+    int num_supported;
+    char **supported_values;
+    char *default_value;
+    int range_lower;  /* only valid when type == CPDB_CAP_RANGE */
+    int range_upper;
+} Capability;
+
 /**
  * Represents a single 'media' size for a printer and supported margins
  */
@@ -256,6 +282,8 @@ int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
+int get_all_capabilities(PrinterCUPS *p, Capability **caps);
+
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
                   char *error_msg, int error_msg_len, BackendObj *b);
@@ -310,6 +338,8 @@ void free_options(int count, Option *opts);
 void unpack_option_array(GVariant *var, int num_options, Option **options);
 GVariant *pack_option(const Option *opt);
 GVariant *pack_media(const Media *media);
+void free_capabilities(int count, Capability *caps);
+GVariant *pack_capability(const Capability *cap);
 /**********Mapping related functions*****************/
 Mappings *get_new_Mappings();
 
