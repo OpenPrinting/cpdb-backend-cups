@@ -1264,7 +1264,7 @@ static CapabilityType cpdb_capability_type_from_ipp(ipp_attribute_t *attr,
  */
 int get_all_capabilities(PrinterCUPS *p, Capability **caps)
 {
-    ensure_printer_connection(p);
+    ensure_dest_info(p);
 
     char **option_names;
     int num_options = get_job_creation_attributes(p, &option_names);
