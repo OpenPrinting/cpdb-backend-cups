@@ -648,6 +648,7 @@ static gboolean on_handle_print_socket(PrintBackend *interface,
     print_socket(p, num_settings, settings, jobid, socket, title, error_msg, sizeof(error_msg), b);
     g_mutex_lock(&b->dialogs_mutex);
 
+    
     /* If socket_path is empty, print_socket failed before creating the job.
     * Return a D-Bus error so the frontend doesn't hang waiting for a reply. */
     if (socket[0] == '\0') {
