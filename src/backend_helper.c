@@ -1424,8 +1424,12 @@ const char *get_printer_state(PrinterCUPS *p)
     if ((attr = ippFindAttribute(response, "printer-state",
                                  IPP_TAG_ENUM)) != NULL)
     {
-        logdebug("printer-state=%d\n", ippGetInteger(attr, 0));
-        str = map->state[ippGetInteger(attr, 0)];
+        int state = ippGetInteger(attr, 0);
+        logdebug("printer-state=%d\n", state);
+        if (state >= 0 && state < 6)
+            str = map->state[state];
+        else
+            str = "NA";
     }
     return str;
 }
@@ -1868,6 +1872,8 @@ void free_Dialog(Dialog *d)
 Mappings *get_new_Mappings()
 {
     Mappings *m = (Mappings *)(malloc(sizeof(Mappings)));
+    for (int i = 0; i < 6; i ++)
+        m->state[i] = "NA";
     m->state[3] = CPDB_STATE_IDLE;
     m->state[4] = CPDB_STATE_PRINTING;
     m->state[5] = CPDB_STATE_STOPPED;
@@ -1886,7 +1892,10 @@ const char *cups_printer_state(cups_dest_t *dest)
                                       dest->options);
     if (state == NULL)
         return "NA";
-    return map->state[state[0] - '0'];
+    int idx = state[0] - '0';
+    if (idx < 0 || idx >= 6)
+        return "NA";
+    return map->state[idx];
 }
 
 gboolean cups_is_accepting_jobs(cups_dest_t *dest)
