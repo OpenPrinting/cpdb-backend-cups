@@ -106,7 +106,8 @@ typedef enum _CapabilityType
     CPDB_CAP_ENUM,
     CPDB_CAP_KEYWORD,
     CPDB_CAP_RESOLUTION,
-    CPDB_CAP_STRING
+    CPDB_CAP_STRING,
+    CPDB_CAP_UNKNOWN
 } CapabilityType;
 
 /**
@@ -116,9 +117,13 @@ typedef enum _CapabilityType
 typedef struct _Capability
 {
     char *option_name;
+    char *human_readable_name;
+    char *group_name;
+    char *human_readable_group;
     CapabilityType type;
     int num_supported;
     char **supported_values;
+    char **human_readable_choices;  /* parallel array to supported_values */
     char *default_value;
     int range_lower;  /* only valid when type == CPDB_CAP_RANGE */
     int range_upper;
@@ -282,7 +287,8 @@ int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
-int get_all_capabilities(PrinterCUPS *p, Capability **caps);
+int get_all_capabilities(PrinterCUPS *p, Capability **caps,
+                         const char *locale);
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,

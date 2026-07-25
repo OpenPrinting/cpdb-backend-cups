@@ -781,6 +781,7 @@ static gboolean on_handle_get_all_options(PrintBackend *interface,
 static gboolean on_handle_get_all_capabilities(PrintBackend *interface,
                                                GDBusMethodInvocation *invocation,
                                                const gchar *printer_name,
+                                               const gchar *locale,
                                                gpointer user_data)
 {
     const char *dialog_name = g_dbus_method_invocation_get_sender(invocation);
@@ -798,8 +799,8 @@ static gboolean on_handle_get_all_capabilities(PrintBackend *interface,
     GVariant *media_variant = g_variant_builder_end(media_builder);
 
     Capability *caps;
-    int count = get_all_capabilities(p, &caps);
-    GVariantBuilder *builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssisia(s)ii)"));
+    int count = get_all_capabilities(p, &caps, locale);
+    GVariantBuilder *builder = g_variant_builder_new(G_VARIANT_TYPE("a(sssisia(ss)ii)"));
     for (int i = 0; i < count; i++)
         g_variant_builder_add_value(builder, pack_capability(&caps[i]));
     GVariant *variant = g_variant_builder_end(builder);

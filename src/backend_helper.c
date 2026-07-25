@@ -821,9 +821,16 @@ void free_capabilities(int count, Capability *caps)
     for (int i = 0; i < count; i++)
     {
         free(caps[i].option_name);
+        free(caps[i].human_readable_name);
+        free(caps[i].group_name);
+        free(caps[i].human_readable_group);
         for (int j = 0; j < caps[i].num_supported; j++)
+        {
             free(caps[i].supported_values[j]);
+            free(caps[i].human_readable_choices[j]);
+        }
         free(caps[i].supported_values);
+        free(caps[i].human_readable_choices);
         free(caps[i].default_value);
     }
     free(caps);
@@ -831,19 +838,25 @@ void free_capabilities(int count, Capability *caps)
 
 GVariant *pack_capability(const Capability *cap)
 {
-    char *group_name = cpdbGetGroup(cap->option_name);
-    GVariant **t = g_new(GVariant *, 8);
+    GVariant **t = g_new(GVariant *, 10);
     t[0] = g_variant_new_string(cap->option_name);
-    t[1] = g_variant_new_string(group_name);
-    t[2] = g_variant_new_int32((gint32)cap->type);
-    t[3] = g_variant_new_string(cap->default_value);
-    t[4] = g_variant_new_int32(cap->num_supported);
-    t[5] = cpdbPackStringArray(cap->num_supported, cap->supported_values);
-    t[6] = g_variant_new_int32(cap->range_lower);
-    t[7] = g_variant_new_int32(cap->range_upper);
-    GVariant *tuple_variant = g_variant_new_tuple(t, 8);
+    t[1] = g_variant_new_string(cap->human_readable_name);
+    t[2] = g_variant_new_string(cap->group_name);
+    t[3] = g_variant_new_string(cap->human_readable_group);
+    t[4] = g_variant_new_int32((gint32)cap->type);
+    t[5] = g_variant_new_string(cap->default_value);
+    t[6] = g_variant_new_int32(cap->num_supported);
+    GVariantBuilder *b = g_variant_builder_new(G_VARIANT_TYPE("a(ss)"));
+    for (int i = 0; i < cap->num_supported; i++)
+        g_variant_builder_add(b, "(ss)", cap->supported_values[i],
+                              cap->human_readable_choices[i]);
+    if (cap->num_supported == 0)
+        g_variant_builder_add(b, "(ss)", "NA", "NA");
+    t[7] = g_variant_builder_end(b);
+    t[8] = g_variant_new_int32(cap->range_lower);
+    t[9] = g_variant_new_int32(cap->range_upper);
+    GVariant *tuple_variant = g_variant_new_tuple(t, 10);
     g_free(t);
-    free(group_name);
     return tuple_variant;
 }
 
@@ -1262,7 +1275,8 @@ static CapabilityType cpdb_capability_type_from_ipp(ipp_attribute_t *attr,
  * unless they're on the hardcoded exception list, per the CUPS backend's
  * own filtering responsibility (nothing changes in GetAllOptions/Option).
  */
-int get_all_capabilities(PrinterCUPS *p, Capability **caps)
+int get_all_capabilities(PrinterCUPS *p, Capability **caps,
+                         const char *locale)
 {
     ensure_dest_info(p);
 
@@ -1286,16 +1300,31 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps)
             continue; /* handled in the hardcoded block below */
 
         raw[rawIndex].option_name = option_names[i];
+        raw[rawIndex].human_readable_name = get_option_translation(p, option_names[i], locale);
+        if (!raw[rawIndex].human_readable_name)
+            raw[rawIndex].human_readable_name = g_strdup(option_names[i]);
+
+        char *group = cpdbGetGroup(option_names[i]);
+        raw[rawIndex].group_name = group;
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
+
         vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_names[i]);
         raw[rawIndex].type = cpdb_capability_type_from_ipp(vals, option_names[i]);
         raw[rawIndex].num_supported = vals ? ippGetCount(vals) : 0;
 
         raw[rawIndex].supported_values = cpdbNewCStringArray(raw[rawIndex].num_supported);
+        raw[rawIndex].human_readable_choices = cpdbNewCStringArray(raw[rawIndex].num_supported);
         for (int j = 0; j < raw[rawIndex].num_supported; j++)
         {
             raw[rawIndex].supported_values[j] = extract_ipp_attribute(vals, j, option_names[i]);
             if (raw[rawIndex].supported_values[j] == NULL)
                 raw[rawIndex].supported_values[j] = g_strdup("NA");
+            raw[rawIndex].human_readable_choices[j] =
+                get_choice_translation(p, option_names[i],
+                                       raw[rawIndex].supported_values[j], locale);
+            if (!raw[rawIndex].human_readable_choices[j])
+                raw[rawIndex].human_readable_choices[j] =
+                    g_strdup(raw[rawIndex].supported_values[j]);
         }
 
         if (raw[rawIndex].type == CPDB_CAP_RANGE && vals)
@@ -1333,26 +1362,44 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps)
     for (size_t h = 0; h < G_N_ELEMENTS(hardcoded); h++)
     {
         raw[rawIndex].option_name = g_strdup(hardcoded[h].name);
+        char *group = cpdbGetGroup(hardcoded[h].name);
+        raw[rawIndex].group_name = group;
+        /* Known hardcoded CUPS options have no IPP translation endpoint;
+         * use raw strings as human-readable fallback. */
+        raw[rawIndex].human_readable_name = g_strdup(hardcoded[h].name);
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
         raw[rawIndex].type = CPDB_CAP_ENUM;
         raw[rawIndex].num_supported = hardcoded[h].n;
         raw[rawIndex].supported_values = cpdbNewCStringArray(hardcoded[h].n);
+        raw[rawIndex].human_readable_choices = cpdbNewCStringArray(hardcoded[h].n);
         for (int j = 0; j < hardcoded[h].n; j++)
+        {
             raw[rawIndex].supported_values[j] = g_strdup(hardcoded[h].values[j]);
+            raw[rawIndex].human_readable_choices[j] = g_strdup(hardcoded[h].values[j]);
+        }
         raw[rawIndex].range_lower = raw[rawIndex].range_upper = 0;
         raw[rawIndex].default_value = get_default(p, raw[rawIndex].option_name);
         if (strcmp(raw[rawIndex].default_value, "NA") == 0)
             raw[rawIndex].default_value = g_strdup(hardcoded[h].values[0]);
         rawIndex++;
     }
-    /* "position" (9 values) kept separate: table above caps at 8 columns */
+    /* "position" (9 values) kept separately: table above caps at 8 columns */
     raw[rawIndex].option_name = g_strdup("position");
+    char *group = cpdbGetGroup("position");
+    raw[rawIndex].group_name = group;
+    raw[rawIndex].human_readable_name = g_strdup("position");
+    raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
     raw[rawIndex].type = CPDB_CAP_ENUM;
     raw[rawIndex].num_supported = 9;
     raw[rawIndex].supported_values = cpdbNewCStringArray(9);
+    raw[rawIndex].human_readable_choices = cpdbNewCStringArray(9);
     const char *position_vals[9] = {"center","top","bottom","left","right",
                                      "top-left","top-right","bottom-left","bottom-right"};
     for (int j = 0; j < 9; j++)
+    {
         raw[rawIndex].supported_values[j] = g_strdup(position_vals[j]);
+        raw[rawIndex].human_readable_choices[j] = g_strdup(position_vals[j]);
+    }
     raw[rawIndex].range_lower = raw[rawIndex].range_upper = 0;
     raw[rawIndex].default_value = get_default(p, raw[rawIndex].option_name);
     if (strcmp(raw[rawIndex].default_value, "NA") == 0)
@@ -1367,9 +1414,16 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps)
         if (raw[i].num_supported <= 1 && !cpdb_is_capability_exception(raw[i].option_name))
         {
             free(raw[i].option_name);
+            free(raw[i].human_readable_name);
+            free(raw[i].group_name);
+            free(raw[i].human_readable_group);
             for (int j = 0; j < raw[i].num_supported; j++)
+            {
                 free(raw[i].supported_values[j]);
+                free(raw[i].human_readable_choices[j]);
+            }
             free(raw[i].supported_values);
+            free(raw[i].human_readable_choices);
             free(raw[i].default_value);
             continue;
         }
@@ -2437,6 +2491,9 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
         attrstr = ippEnumString(option_name, ippGetInteger(attr, index));
 	str = strdup(attrstr);
         break;
+
+    case IPP_TAG_BOOLEAN:
+        return g_strdup(ippGetBoolean(attr, index) ? "true" : "false");
 
     case IPP_TAG_RANGE:
         #define TAG_RANGE_LEN 100
