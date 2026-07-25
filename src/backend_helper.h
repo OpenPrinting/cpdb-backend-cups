@@ -20,6 +20,9 @@
 #define JOB_ID_BUFLEN 32
 #define SOCKET_PATH_BUFLEN 1024
 
+/* Fallback locale for human-readable translations */
+#define CPDB_FALLBACK_LOCALE "en"
+
 /* New Debug macros */
 #define BACKEND_NAME "CUPS"
 #define logdebug(...) cpdbBDebugPrintf(CPDB_DEBUG_LEVEL_DEBUG, BACKEND_NAME, __VA_ARGS__)
@@ -326,6 +329,27 @@ char *get_option_translation(PrinterCUPS *p, const char *option_name,
  */
 char *get_choice_translation(PrinterCUPS *p, const char *option_name,
                              const char *choice_name, const char *locale);
+
+/**
+ * Get translation of option name with English fallback
+ */
+char *get_option_translation_with_fallback(PrinterCUPS *p,
+                                           const char *option_name,
+                                           const char *locale);
+
+/**
+ * Get translation of choice name with English fallback
+ */
+char *get_choice_translation_with_fallback(PrinterCUPS *p,
+                                           const char *option_name,
+                                           const char *choice_name,
+                                           const char *locale);
+
+/**
+ * Get translation of group name with English fallback
+ */
+char *get_group_translation_with_fallback(const char *group_name,
+                                          const char *locale);
 
 /**
  * Get translations for all printer strings
