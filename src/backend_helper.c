@@ -1300,11 +1300,13 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
             continue; /* handled in the hardcoded block below */
 
         raw[rawIndex].option_name = option_names[i];
-        raw[rawIndex].human_readable_name = get_option_translation_with_fallback(p, option_names[i], locale);
+        raw[rawIndex].human_readable_name = get_option_translation(p, option_names[i], locale);
+        if (!raw[rawIndex].human_readable_name)
+            raw[rawIndex].human_readable_name = g_strdup(option_names[i]);
 
         char *group = cpdbGetGroup(option_names[i]);
         raw[rawIndex].group_name = group;
-        raw[rawIndex].human_readable_group = get_group_translation_with_fallback(group, locale);
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
 
         vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_names[i]);
         raw[rawIndex].type = cpdb_capability_type_from_ipp(vals, option_names[i]);
@@ -1318,8 +1320,11 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
             if (raw[rawIndex].supported_values[j] == NULL)
                 raw[rawIndex].supported_values[j] = g_strdup("NA");
             raw[rawIndex].human_readable_choices[j] =
-                get_choice_translation_with_fallback(p, option_names[i],
+                get_choice_translation(p, option_names[i],
                                        raw[rawIndex].supported_values[j], locale);
+            if (!raw[rawIndex].human_readable_choices[j])
+                raw[rawIndex].human_readable_choices[j] =
+                    g_strdup(raw[rawIndex].supported_values[j]);
         }
 
         if (raw[rawIndex].type == CPDB_CAP_RANGE && vals)
@@ -1362,7 +1367,7 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
         /* Known hardcoded CUPS options have no IPP translation endpoint;
          * use raw strings as human-readable fallback. */
         raw[rawIndex].human_readable_name = g_strdup(hardcoded[h].name);
-        raw[rawIndex].human_readable_group = get_group_translation_with_fallback(group, locale);
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
         raw[rawIndex].type = CPDB_CAP_ENUM;
         raw[rawIndex].num_supported = hardcoded[h].n;
         raw[rawIndex].supported_values = cpdbNewCStringArray(hardcoded[h].n);
@@ -1383,7 +1388,7 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
     char *group = cpdbGetGroup("position");
     raw[rawIndex].group_name = group;
     raw[rawIndex].human_readable_name = g_strdup("position");
-    raw[rawIndex].human_readable_group = get_group_translation_with_fallback(group, locale);
+    raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
     raw[rawIndex].type = CPDB_CAP_ENUM;
     raw[rawIndex].num_supported = 9;
     raw[rawIndex].supported_values = cpdbNewCStringArray(9);
@@ -2635,54 +2640,6 @@ char *get_choice_translation(PrinterCUPS *p,
     cupsArrayDelete(opts_catalog);
     cupsArrayDelete(printer_opts_catalog);
     return copy;
-}
-
-char *get_option_translation_with_fallback(PrinterCUPS *p,
-                                           const char *option_name,
-                                           const char *locale)
-{
-    char *translation = get_option_translation(p, option_name, locale);
-    if ((!translation || strcmp(translation, option_name) == 0)
-        && strcmp(locale, CPDB_FALLBACK_LOCALE) != 0)
-    {
-        g_free(translation);
-        translation = get_option_translation(p, option_name, CPDB_FALLBACK_LOCALE);
-    }
-    if (!translation)
-        translation = g_strdup(option_name);
-    return translation;
-}
-
-char *get_choice_translation_with_fallback(PrinterCUPS *p,
-                                           const char *option_name,
-                                           const char *choice_name,
-                                           const char *locale)
-{
-    char *translation = get_choice_translation(p, option_name, choice_name, locale);
-    if ((!translation || strcmp(translation, choice_name) == 0)
-        && strcmp(locale, CPDB_FALLBACK_LOCALE) != 0)
-    {
-        g_free(translation);
-        translation = get_choice_translation(p, option_name, choice_name, CPDB_FALLBACK_LOCALE);
-    }
-    if (!translation)
-        translation = g_strdup(choice_name);
-    return translation;
-}
-
-char *get_group_translation_with_fallback(const char *group_name,
-                                          const char *locale)
-{
-    char *translation = cpdbGetGroupTranslation2(group_name, locale);
-    if ((!translation || strcmp(translation, group_name) == 0)
-        && strcmp(locale, CPDB_FALLBACK_LOCALE) != 0)
-    {
-        g_free(translation);
-        translation = cpdbGetGroupTranslation2(group_name, CPDB_FALLBACK_LOCALE);
-    }
-    if (!translation)
-        translation = g_strdup(group_name);
-    return translation;
 }
 
 GVariant *get_printer_translations(PrinterCUPS *p, const char *locale)
