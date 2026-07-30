@@ -141,6 +141,16 @@ typedef struct _Media
 	int (*margins)[4]; /** int margins[num_margins][4]; left(0), right(1), top(2), bottom(3) **/
 } Media;
 
+typedef struct _CapabilityMedia
+{
+    char *name;
+    char *human_readable_name;
+    int width;
+    int length;
+    int num_margins;
+    int (*margins)[4];
+} CapabilityMedia;
+
 typedef struct _PrintDataThreadData {
     cups_dest_t   *dest;
     int            job_id;
@@ -285,6 +295,8 @@ int get_job_creation_attributes(PrinterCUPS *p, char ***values);
 
 int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
+int get_all_capability_media(PrinterCUPS *p, CapabilityMedia **medias,
+                             const char *locale);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
 
 int get_all_capabilities(PrinterCUPS *p, Capability **caps,
@@ -344,6 +356,8 @@ void free_options(int count, Option *opts);
 void unpack_option_array(GVariant *var, int num_options, Option **options);
 GVariant *pack_option(const Option *opt);
 GVariant *pack_media(const Media *media);
+GVariant *pack_capability_media(const CapabilityMedia *media);
+void free_capability_media(int count, CapabilityMedia *medias);
 void free_capabilities(int count, Capability *caps);
 GVariant *pack_capability(const Capability *cap);
 /**********Mapping related functions*****************/

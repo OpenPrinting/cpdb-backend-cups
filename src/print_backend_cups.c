@@ -791,22 +791,23 @@ static gboolean on_handle_get_all_capabilities(PrintBackend *interface,
         return TRUE;
     }
 
-    Media *medias;
-    int media_count = get_all_media(p, &medias);
-    GVariantBuilder *media_builder = g_variant_builder_new(G_VARIANT_TYPE("a(siiia(iiii))"));
+    CapabilityMedia *medias;
+    int media_count = get_all_capability_media(p, &medias, locale);
+    GVariantBuilder *media_builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssiiia(iiii))"));
     for (int i = 0; i < media_count; i++)
-        g_variant_builder_add_value(media_builder, pack_media(&medias[i]));
+        g_variant_builder_add_value(media_builder, pack_capability_media(&medias[i]));
     GVariant *media_variant = g_variant_builder_end(media_builder);
 
     Capability *caps;
     int count = get_all_capabilities(p, &caps, locale);
-    GVariantBuilder *builder = g_variant_builder_new(G_VARIANT_TYPE("a(sssisia(ss)ii)"));
+    GVariantBuilder *builder = g_variant_builder_new(G_VARIANT_TYPE("a(ssssisia(ss)ii)"));
     for (int i = 0; i < count; i++)
         g_variant_builder_add_value(builder, pack_capability(&caps[i]));
     GVariant *variant = g_variant_builder_end(builder);
 
     print_backend_complete_get_all_capabilities(interface, invocation, count, variant,
                                                 media_count, media_variant);
+    free_capability_media(media_count, medias);
     free_capabilities(count, caps);
     return TRUE;
 }

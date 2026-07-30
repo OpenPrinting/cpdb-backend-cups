@@ -816,6 +816,31 @@ GVariant *pack_media(const Media *media)
 	return tuple_variant;
 }
 
+GVariant *pack_capability_media(const CapabilityMedia *media)
+{
+    GVariant **t = g_new(GVariant *, 6);
+    t[0] = g_variant_new_string(media->name);
+    t[1] = g_variant_new_string(media->human_readable_name);
+    t[2] = g_variant_new_int32(media->width);
+    t[3] = g_variant_new_int32(media->length);
+    t[4] = g_variant_new_int32(media->num_margins);
+    t[5] = cpdbPackMediaArray(media->num_margins, media->margins);
+    GVariant *tuple_variant = g_variant_new_tuple(t, 6);
+    g_free(t);
+    return tuple_variant;
+}
+
+void free_capability_media(int count, CapabilityMedia *medias)
+{
+    for (int i = 0; i < count; i++)
+    {
+        free(medias[i].name);
+        free(medias[i].human_readable_name);
+        free(medias[i].margins);
+    }
+    free(medias);
+}
+
 void free_capabilities(int count, Capability *caps)
 {
     for (int i = 0; i < count; i++)
@@ -1569,6 +1594,145 @@ int get_all_media(PrinterCUPS *p, Media **medias)
 	*medias = meds;
 	return media_num;
 }
+
+int get_all_capability_media(PrinterCUPS *p, CapabilityMedia **medias,
+                              const char *locale)
+{
+    ensure_dest_info(p);
+    ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
+    const char *uri = cupsGetOption("printer-uri-supported",
+                                    p->dest->num_options,
+                                    p->dest->options);
+    ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                 "printer-uri", NULL, uri);
+    const char *const requested_attributes[] = {"media-col-database"};
+    ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                  "requested-attributes", 1, NULL,
+                  requested_attributes);
+
+    ipp_t *response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");
+    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    {
+        logerror("Request failed: %s\n", cupsLastErrorString());
+        return 0;
+    }
+
+    int media_num = 0;
+    CapabilityMedia *meds = NULL;
+
+    ipp_attribute_t *mdb;
+    if ((mdb = ippFindAttribute(response, "media-col-database", IPP_TAG_BEGIN_COLLECTION)) != NULL)
+    {
+        int i, j;
+        gpointer key, value;
+
+        const char *name;
+        int width, length;
+        pwg_media_t *pwg_media;
+
+        ipp_t *tuple;
+        ipp_t *media_size;
+        ipp_attribute_t *attr;
+
+        typedef struct Margin {
+            int left;
+            int right;
+            int top;
+            int bottom;
+        } Margin;
+
+        Margin *margin;
+        GList *margins, *listIter;
+        GHashTable *table;
+        GHashTableIter iter;
+
+        table = g_hash_table_new(g_str_hash, g_str_equal);
+
+        int count = ippGetCount(mdb);
+        for (int i = 0; i < count; i++)
+        {
+            tuple = ippGetCollection(mdb, i);
+
+            attr = ippFindAttribute(tuple, "media-size", IPP_TAG_BEGIN_COLLECTION);
+            media_size = ippGetCollection(attr, 0);
+            attr = ippFindAttribute(media_size, "x-dimension", IPP_TAG_INTEGER);
+            width = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(media_size, "y-dimension", IPP_TAG_INTEGER);
+            length = ippGetInteger(attr, 0);
+
+            if (width <= 0 || length <= 0)
+              continue;
+
+            pwg_media = pwgMediaForSize(width, length);
+            name = pwg_media->pwg;
+
+            margin = g_new0(Margin, 1);
+
+            attr = ippFindAttribute(tuple, "media-left-margin", IPP_TAG_INTEGER);
+            margin->left = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-right-margin", IPP_TAG_INTEGER);
+            margin->right = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-top-margin", IPP_TAG_INTEGER);
+            margin->top = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-bottom-margin", IPP_TAG_INTEGER);
+            margin->bottom = ippGetInteger(attr, 0);
+
+            margins = g_hash_table_lookup(table, name);
+            margins = g_list_prepend(margins, margin);
+            g_hash_table_replace(table, (gpointer) name, margins);
+        }
+
+        media_num = g_hash_table_size(table);
+        meds = g_new0(CapabilityMedia, media_num);
+
+        i = 0;
+        g_hash_table_iter_init(&iter, table);
+        while (g_hash_table_iter_next(&iter, &key, &value))
+        {
+            name = (char *) key;
+            pwg_media = pwgMediaForPWG(name);
+
+            margins = (GList *) value;
+            margins = g_list_reverse(margins);
+
+            meds[i].name = g_strdup(name);
+            meds[i].human_readable_name = get_option_translation(p, name, locale);
+            if (!meds[i].human_readable_name)
+                meds[i].human_readable_name = g_strdup(name);
+            meds[i].width = pwg_media->width;
+            meds[i].length = pwg_media->length;
+            meds[i].num_margins = g_list_length(margins);
+            meds[i].margins = malloc(sizeof(int) * meds[i].num_margins * 4);
+
+            j = 0;
+            listIter = margins;
+            while (listIter != NULL)
+            {
+                margin = (Margin *) listIter->data;
+
+                meds[i].margins[j][0] = margin->left;
+                meds[i].margins[j][1] = margin->right;
+                meds[i].margins[j][2] = margin->top;
+                meds[i].margins[j][3] = margin->bottom;
+
+                free(margin);
+
+                listIter = listIter->next;
+                j++;
+            }
+            g_list_free(margins);
+            i++;
+        }
+
+        g_hash_table_destroy(table);
+    }
+
+    ippDelete(response);
+
+    *medias = meds;
+    return media_num;
+}
+
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count)
 {
     int i, j;							/** Looping variables **/
