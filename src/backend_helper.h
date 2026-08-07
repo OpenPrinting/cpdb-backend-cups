@@ -98,6 +98,37 @@ typedef struct _Option
     char *default_value;
 } Option;
 
+typedef enum _CapabilityType
+{
+    CPDB_CAP_BOOLEAN,
+    CPDB_CAP_INTEGER,
+    CPDB_CAP_RANGE,
+    CPDB_CAP_ENUM,
+    CPDB_CAP_KEYWORD,
+    CPDB_CAP_RESOLUTION,
+    CPDB_CAP_STRING,
+    CPDB_CAP_UNKNOWN
+} CapabilityType;
+
+/**
+ * Like Option, but carries the real IPP type instead of forcing the
+ * caller to re-guess it from supported_values.
+ */
+typedef struct _Capability
+{
+    char *option_name;
+    char *human_readable_name;
+    char *group_name;
+    char *human_readable_group;
+    CapabilityType type;
+    int num_supported;
+    char **supported_values;
+    char **human_readable_choices;  /* parallel array to supported_values */
+    char *default_value;
+    int range_lower;  /* only valid when type == CPDB_CAP_RANGE */
+    int range_upper;
+} Capability;
+
 /**
  * Represents a single 'media' size for a printer and supported margins
  */
@@ -109,6 +140,16 @@ typedef struct _Media
 	int num_margins;
 	int (*margins)[4]; /** int margins[num_margins][4]; left(0), right(1), top(2), bottom(3) **/
 } Media;
+
+typedef struct _CapabilityMedia
+{
+    char *name;
+    char *human_readable_name;
+    int width;
+    int length;
+    int num_margins;
+    int (*margins)[4];
+} CapabilityMedia;
 
 typedef struct _PrintDataThreadData {
     cups_dest_t   *dest;
@@ -254,7 +295,12 @@ int get_job_creation_attributes(PrinterCUPS *p, char ***values);
 
 int get_all_options(PrinterCUPS *p, Option **options);
 int get_all_media(PrinterCUPS *p, Media **medias);
+int get_all_capability_media(PrinterCUPS *p, CapabilityMedia **medias,
+                             const char *locale);
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count);
+
+int get_all_capabilities(PrinterCUPS *p, Capability **caps,
+                         const char *locale);
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
@@ -310,6 +356,10 @@ void free_options(int count, Option *opts);
 void unpack_option_array(GVariant *var, int num_options, Option **options);
 GVariant *pack_option(const Option *opt);
 GVariant *pack_media(const Media *media);
+GVariant *pack_capability_media(const CapabilityMedia *media);
+void free_capability_media(int count, CapabilityMedia *medias);
+void free_capabilities(int count, Capability *caps);
+GVariant *pack_capability(const Capability *cap);
 /**********Mapping related functions*****************/
 Mappings *get_new_Mappings();
 

@@ -815,6 +815,76 @@ GVariant *pack_media(const Media *media)
 	g_free(t);
 	return tuple_variant;
 }
+
+GVariant *pack_capability_media(const CapabilityMedia *media)
+{
+    GVariant **t = g_new(GVariant *, 6);
+    t[0] = g_variant_new_string(media->name);
+    t[1] = g_variant_new_string(media->human_readable_name);
+    t[2] = g_variant_new_int32(media->width);
+    t[3] = g_variant_new_int32(media->length);
+    t[4] = g_variant_new_int32(media->num_margins);
+    t[5] = cpdbPackMediaArray(media->num_margins, media->margins);
+    GVariant *tuple_variant = g_variant_new_tuple(t, 6);
+    g_free(t);
+    return tuple_variant;
+}
+
+void free_capability_media(int count, CapabilityMedia *medias)
+{
+    for (int i = 0; i < count; i++)
+    {
+        free(medias[i].name);
+        free(medias[i].human_readable_name);
+        free(medias[i].margins);
+    }
+    free(medias);
+}
+
+void free_capabilities(int count, Capability *caps)
+{
+    for (int i = 0; i < count; i++)
+    {
+        free(caps[i].option_name);
+        free(caps[i].human_readable_name);
+        free(caps[i].group_name);
+        free(caps[i].human_readable_group);
+        for (int j = 0; j < caps[i].num_supported; j++)
+        {
+            free(caps[i].supported_values[j]);
+            free(caps[i].human_readable_choices[j]);
+        }
+        free(caps[i].supported_values);
+        free(caps[i].human_readable_choices);
+        free(caps[i].default_value);
+    }
+    free(caps);
+}
+
+GVariant *pack_capability(const Capability *cap)
+{
+    GVariant **t = g_new(GVariant *, 10);
+    t[0] = g_variant_new_string(cap->option_name);
+    t[1] = g_variant_new_string(cap->human_readable_name);
+    t[2] = g_variant_new_string(cap->group_name);
+    t[3] = g_variant_new_string(cap->human_readable_group);
+    t[4] = g_variant_new_int32((gint32)cap->type);
+    t[5] = g_variant_new_string(cap->default_value);
+    t[6] = g_variant_new_int32(cap->num_supported);
+    GVariantBuilder *b = g_variant_builder_new(G_VARIANT_TYPE("a(ss)"));
+    for (int i = 0; i < cap->num_supported; i++)
+        g_variant_builder_add(b, "(ss)", cap->supported_values[i],
+                              cap->human_readable_choices[i]);
+    if (cap->num_supported == 0)
+        g_variant_builder_add(b, "(ss)", "NA", "NA");
+    t[7] = g_variant_builder_end(b);
+    t[8] = g_variant_new_int32(cap->range_lower);
+    t[9] = g_variant_new_int32(cap->range_upper);
+    GVariant *tuple_variant = g_variant_new_tuple(t, 10);
+    g_free(t);
+    return tuple_variant;
+}
+
 int get_all_options(PrinterCUPS *p, Option **options)
 {
     ensure_dest_info(p);
@@ -1167,6 +1237,229 @@ int get_all_options(PrinterCUPS *p, Option **options)
     *options = (Option *) realloc(opts, sizeof(Option) * optsIndex);
     return optsIndex;
 }
+
+/* Options cpdb-backend-cups synthesizes itself (no matching IPP attribute),
+ * with their true type stated explicitly rather than inferred. */
+static const char *const cpdb_hardcoded_enum_options[] = {
+    "booklet", "ipp-attribute-fidelity", "job-sheets",
+    "multiple-document-handling", "number-up", "number-up-layout",
+    "orientation-requested", "page-border", "page-delivery",
+    "page-set", "position", "print-scaling"
+};
+
+/* Single-choice options that must still be reported even though
+ * num_supported == 1, because they carry geometry/color info the
+ * frontend needs regardless of choice count. Hardcoded per-backend. */
+static const char *const cpdb_capability_exceptions[] = {
+    "media", "media-source", "media-type", "media-col",
+    "print-color-mode", "media-top-margin", "media-bottom-margin",
+    "media-left-margin", "media-right-margin"
+};
+
+static gboolean cpdb_is_hardcoded_enum(const char *name)
+{
+    for (size_t i = 0; i < G_N_ELEMENTS(cpdb_hardcoded_enum_options); i++)
+        if (strcmp(name, cpdb_hardcoded_enum_options[i]) == 0)
+            return TRUE;
+    return FALSE;
+}
+
+static gboolean cpdb_is_capability_exception(const char *name)
+{
+    for (size_t i = 0; i < G_N_ELEMENTS(cpdb_capability_exceptions); i++)
+        if (strcmp(name, cpdb_capability_exceptions[i]) == 0)
+            return TRUE;
+    return FALSE;
+}
+
+static CapabilityType cpdb_capability_type_from_ipp(ipp_attribute_t *attr,
+                                                    const char *option_name)
+{
+    if (cpdb_is_hardcoded_enum(option_name))
+        return CPDB_CAP_ENUM;
+    if (!attr)
+        return CPDB_CAP_STRING;
+
+    switch (ippGetValueTag(attr))
+    {
+    case IPP_TAG_BOOLEAN:    return CPDB_CAP_BOOLEAN;
+    case IPP_TAG_INTEGER:    return CPDB_CAP_INTEGER;
+    case IPP_TAG_RANGE:      return CPDB_CAP_RANGE;
+    case IPP_TAG_ENUM:       return CPDB_CAP_ENUM;
+    case IPP_TAG_KEYWORD:
+    case IPP_TAG_NAME:       return CPDB_CAP_KEYWORD;
+    case IPP_TAG_RESOLUTION: return CPDB_CAP_RESOLUTION;
+    default:                 return CPDB_CAP_STRING;
+    }
+}
+
+/*
+ * Reads type directly off the IPP attribute (ippGetValueTag/ippGetRange) at
+ * the same point get_all_options() calls extract_ipp_attribute() — before
+ * the type gets flattened into a string. Then drops single-choice entries
+ * unless they're on the hardcoded exception list, per the CUPS backend's
+ * own filtering responsibility (nothing changes in GetAllOptions/Option).
+ */
+int get_all_capabilities(PrinterCUPS *p, Capability **caps,
+                         const char *locale)
+{
+    ensure_dest_info(p);
+
+    char **option_names;
+    int num_options = get_job_creation_attributes(p, &option_names);
+
+    char *additional_options[] = {"media-source", "media-type"};
+    int sz = sizeof(additional_options) / sizeof(char *);
+    option_names = realloc(option_names, sizeof(char *) * (num_options + sz));
+    for (int i = 0; i < sz; i++)
+        option_names[num_options + i] = g_strdup(additional_options[i]);
+    num_options += sz;
+
+    Capability *raw = (Capability *)malloc(sizeof(Capability) * (num_options + 20));
+    int rawIndex = 0;
+    ipp_attribute_t *vals;
+
+    for (int i = 0; i < num_options; i++)
+    {
+        if (cpdb_is_hardcoded_enum(option_names[i]))
+            continue; /* handled in the hardcoded block below */
+
+        raw[rawIndex].option_name = option_names[i];
+        raw[rawIndex].human_readable_name = get_option_translation(p, option_names[i], locale);
+        if (!raw[rawIndex].human_readable_name)
+            raw[rawIndex].human_readable_name = g_strdup(option_names[i]);
+
+        char *group = cpdbGetGroup(option_names[i]);
+        raw[rawIndex].group_name = group;
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
+
+        vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_names[i]);
+        raw[rawIndex].type = cpdb_capability_type_from_ipp(vals, option_names[i]);
+        raw[rawIndex].num_supported = vals ? ippGetCount(vals) : 0;
+
+        raw[rawIndex].supported_values = cpdbNewCStringArray(raw[rawIndex].num_supported);
+        raw[rawIndex].human_readable_choices = cpdbNewCStringArray(raw[rawIndex].num_supported);
+        for (int j = 0; j < raw[rawIndex].num_supported; j++)
+        {
+            raw[rawIndex].supported_values[j] = extract_ipp_attribute(vals, j, option_names[i]);
+            if (raw[rawIndex].supported_values[j] == NULL)
+                raw[rawIndex].supported_values[j] = g_strdup("NA");
+            raw[rawIndex].human_readable_choices[j] =
+                get_choice_translation(p, option_names[i],
+                                       raw[rawIndex].supported_values[j], locale);
+            if (!raw[rawIndex].human_readable_choices[j])
+                raw[rawIndex].human_readable_choices[j] =
+                    g_strdup(raw[rawIndex].supported_values[j]);
+        }
+
+        if (raw[rawIndex].type == CPDB_CAP_RANGE && vals)
+            raw[rawIndex].range_lower = ippGetRange(vals, 0, &raw[rawIndex].range_upper);
+        else
+        {
+            raw[rawIndex].range_lower = 0;
+            raw[rawIndex].range_upper = 0;
+        }
+
+        raw[rawIndex].default_value = get_default(p, option_names[i]);
+        if (raw[rawIndex].default_value == NULL)
+            raw[rawIndex].default_value = g_strdup("NA");
+
+        rawIndex++;
+    }
+
+    /* Hardcoded options: type stated explicitly by whoever wrote the value,
+     * reusing the same literal supported-value lists as get_all_options(). */
+    static const struct { const char *name; const char *values[8]; int n; } hardcoded[] = {
+        {"booklet",                     {"off","on","shuffle-only"}, 3},
+        {"ipp-attribute-fidelity",      {"off","on"}, 2},
+        {"job-sheets",                  {"none","classified","confidential","form",
+                                          "secret","standard","topsecret","unclassified"}, 8},
+        {"multiple-document-handling",  {"separate-documents-uncollated-copies",
+                                          "separate-documents-collated-copies"}, 2},
+        {"number-up",                   {"1","2","4","6","9","16"}, 6},
+        {"number-up-layout",            {"lrtb","lrbt","rltb","rlbt","tblr","tbrl","btlr","btrl"}, 8},
+        {"orientation-requested",       {"3","4","5","6"}, 4},
+        {"page-border",                 {"none","single","single-thick","double","double-thick"}, 5},
+        {"page-delivery",               {"same-order","reverse-order"}, 2},
+        {"page-set",                    {"all","even","odd"}, 3},
+        {"print-scaling",               {"auto","auto-fit","fill","fit","none"}, 5},
+    };
+    for (size_t h = 0; h < G_N_ELEMENTS(hardcoded); h++)
+    {
+        raw[rawIndex].option_name = g_strdup(hardcoded[h].name);
+        char *group = cpdbGetGroup(hardcoded[h].name);
+        raw[rawIndex].group_name = group;
+        /* Known hardcoded CUPS options have no IPP translation endpoint;
+         * use raw strings as human-readable fallback. */
+        raw[rawIndex].human_readable_name = g_strdup(hardcoded[h].name);
+        raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
+        raw[rawIndex].type = CPDB_CAP_ENUM;
+        raw[rawIndex].num_supported = hardcoded[h].n;
+        raw[rawIndex].supported_values = cpdbNewCStringArray(hardcoded[h].n);
+        raw[rawIndex].human_readable_choices = cpdbNewCStringArray(hardcoded[h].n);
+        for (int j = 0; j < hardcoded[h].n; j++)
+        {
+            raw[rawIndex].supported_values[j] = g_strdup(hardcoded[h].values[j]);
+            raw[rawIndex].human_readable_choices[j] = g_strdup(hardcoded[h].values[j]);
+        }
+        raw[rawIndex].range_lower = raw[rawIndex].range_upper = 0;
+        raw[rawIndex].default_value = get_default(p, raw[rawIndex].option_name);
+        if (strcmp(raw[rawIndex].default_value, "NA") == 0)
+            raw[rawIndex].default_value = g_strdup(hardcoded[h].values[0]);
+        rawIndex++;
+    }
+    /* "position" (9 values) kept separately: table above caps at 8 columns */
+    raw[rawIndex].option_name = g_strdup("position");
+    char *group = cpdbGetGroup("position");
+    raw[rawIndex].group_name = group;
+    raw[rawIndex].human_readable_name = g_strdup("position");
+    raw[rawIndex].human_readable_group = cpdbGetGroupTranslation2(group, locale);
+    raw[rawIndex].type = CPDB_CAP_ENUM;
+    raw[rawIndex].num_supported = 9;
+    raw[rawIndex].supported_values = cpdbNewCStringArray(9);
+    raw[rawIndex].human_readable_choices = cpdbNewCStringArray(9);
+    const char *position_vals[9] = {"center","top","bottom","left","right",
+                                     "top-left","top-right","bottom-left","bottom-right"};
+    for (int j = 0; j < 9; j++)
+    {
+        raw[rawIndex].supported_values[j] = g_strdup(position_vals[j]);
+        raw[rawIndex].human_readable_choices[j] = g_strdup(position_vals[j]);
+    }
+    raw[rawIndex].range_lower = raw[rawIndex].range_upper = 0;
+    raw[rawIndex].default_value = get_default(p, raw[rawIndex].option_name);
+    if (strcmp(raw[rawIndex].default_value, "NA") == 0)
+        raw[rawIndex].default_value = g_strdup(position_vals[0]);
+    rawIndex++;
+
+    /* Filter: drop single-choice entries unless on the exception list. */
+    Capability *final = (Capability *)malloc(sizeof(Capability) * rawIndex);
+    int finalIndex = 0;
+    for (int i = 0; i < rawIndex; i++)
+    {
+        if (raw[i].num_supported <= 1 && !cpdb_is_capability_exception(raw[i].option_name))
+        {
+            free(raw[i].option_name);
+            free(raw[i].human_readable_name);
+            free(raw[i].group_name);
+            free(raw[i].human_readable_group);
+            for (int j = 0; j < raw[i].num_supported; j++)
+            {
+                free(raw[i].supported_values[j]);
+                free(raw[i].human_readable_choices[j]);
+            }
+            free(raw[i].supported_values);
+            free(raw[i].human_readable_choices);
+            free(raw[i].default_value);
+            continue;
+        }
+        final[finalIndex++] = raw[i];
+    }
+    free(raw);
+
+    *caps = (Capability *)realloc(final, sizeof(Capability) * finalIndex);
+    return finalIndex;
+}
+
 int get_all_media(PrinterCUPS *p, Media **medias)
 {	
 	ensure_dest_info(p);
@@ -1301,6 +1594,145 @@ int get_all_media(PrinterCUPS *p, Media **medias)
 	*medias = meds;
 	return media_num;
 }
+
+int get_all_capability_media(PrinterCUPS *p, CapabilityMedia **medias,
+                              const char *locale)
+{
+    ensure_dest_info(p);
+    ipp_t *request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
+    const char *uri = cupsGetOption("printer-uri-supported",
+                                    p->dest->num_options,
+                                    p->dest->options);
+    ippAddString(request, IPP_TAG_OPERATION, IPP_TAG_URI,
+                 "printer-uri", NULL, uri);
+    const char *const requested_attributes[] = {"media-col-database"};
+    ippAddStrings(request, IPP_TAG_OPERATION, IPP_TAG_KEYWORD,
+                  "requested-attributes", 1, NULL,
+                  requested_attributes);
+
+    ipp_t *response = cupsDoRequest(CUPS_HTTP_DEFAULT, request, "/");
+    if (cupsLastError() >= IPP_STATUS_ERROR_BAD_REQUEST)
+    {
+        logerror("Request failed: %s\n", cupsLastErrorString());
+        return 0;
+    }
+
+    int media_num = 0;
+    CapabilityMedia *meds = NULL;
+
+    ipp_attribute_t *mdb;
+    if ((mdb = ippFindAttribute(response, "media-col-database", IPP_TAG_BEGIN_COLLECTION)) != NULL)
+    {
+        int i, j;
+        gpointer key, value;
+
+        const char *name;
+        int width, length;
+        pwg_media_t *pwg_media;
+
+        ipp_t *tuple;
+        ipp_t *media_size;
+        ipp_attribute_t *attr;
+
+        typedef struct Margin {
+            int left;
+            int right;
+            int top;
+            int bottom;
+        } Margin;
+
+        Margin *margin;
+        GList *margins, *listIter;
+        GHashTable *table;
+        GHashTableIter iter;
+
+        table = g_hash_table_new(g_str_hash, g_str_equal);
+
+        int count = ippGetCount(mdb);
+        for (int i = 0; i < count; i++)
+        {
+            tuple = ippGetCollection(mdb, i);
+
+            attr = ippFindAttribute(tuple, "media-size", IPP_TAG_BEGIN_COLLECTION);
+            media_size = ippGetCollection(attr, 0);
+            attr = ippFindAttribute(media_size, "x-dimension", IPP_TAG_INTEGER);
+            width = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(media_size, "y-dimension", IPP_TAG_INTEGER);
+            length = ippGetInteger(attr, 0);
+
+            if (width <= 0 || length <= 0)
+              continue;
+
+            pwg_media = pwgMediaForSize(width, length);
+            name = pwg_media->pwg;
+
+            margin = g_new0(Margin, 1);
+
+            attr = ippFindAttribute(tuple, "media-left-margin", IPP_TAG_INTEGER);
+            margin->left = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-right-margin", IPP_TAG_INTEGER);
+            margin->right = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-top-margin", IPP_TAG_INTEGER);
+            margin->top = ippGetInteger(attr, 0);
+            attr = ippFindAttribute(tuple, "media-bottom-margin", IPP_TAG_INTEGER);
+            margin->bottom = ippGetInteger(attr, 0);
+
+            margins = g_hash_table_lookup(table, name);
+            margins = g_list_prepend(margins, margin);
+            g_hash_table_replace(table, (gpointer) name, margins);
+        }
+
+        media_num = g_hash_table_size(table);
+        meds = g_new0(CapabilityMedia, media_num);
+
+        i = 0;
+        g_hash_table_iter_init(&iter, table);
+        while (g_hash_table_iter_next(&iter, &key, &value))
+        {
+            name = (char *) key;
+            pwg_media = pwgMediaForPWG(name);
+
+            margins = (GList *) value;
+            margins = g_list_reverse(margins);
+
+            meds[i].name = g_strdup(name);
+            meds[i].human_readable_name = get_option_translation(p, name, locale);
+            if (!meds[i].human_readable_name)
+                meds[i].human_readable_name = g_strdup(name);
+            meds[i].width = pwg_media->width;
+            meds[i].length = pwg_media->length;
+            meds[i].num_margins = g_list_length(margins);
+            meds[i].margins = malloc(sizeof(int) * meds[i].num_margins * 4);
+
+            j = 0;
+            listIter = margins;
+            while (listIter != NULL)
+            {
+                margin = (Margin *) listIter->data;
+
+                meds[i].margins[j][0] = margin->left;
+                meds[i].margins[j][1] = margin->right;
+                meds[i].margins[j][2] = margin->top;
+                meds[i].margins[j][3] = margin->bottom;
+
+                free(margin);
+
+                listIter = listIter->next;
+                j++;
+            }
+            g_list_free(margins);
+            i++;
+        }
+
+        g_hash_table_destroy(table);
+    }
+
+    ippDelete(response);
+
+    *medias = meds;
+    return media_num;
+}
+
 int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option **options, int count)
 {
     int i, j;							/** Looping variables **/
@@ -2232,6 +2664,9 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
         attrstr = ippEnumString(option_name, ippGetInteger(attr, index));
 	str = strdup(attrstr);
         break;
+
+    case IPP_TAG_BOOLEAN:
+        return g_strdup(ippGetBoolean(attr, index) ? "true" : "false");
 
     case IPP_TAG_RANGE:
         #define TAG_RANGE_LEN 100
