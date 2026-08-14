@@ -1,44 +1,135 @@
-name: Build and Test
+# =============================================================================
+# Multi-Architecture / multi-CUPS Build & Test Workflow for cpdb-backend-cups
+#
+# Matrix: 4 architectures x 3 CUPS releases = 12 combinations.
+#   architectures: amd64, arm64 (native runners); armhf, riscv64 (QEMU)
+#   CUPS releases: 2.4.x (distro libcups2-dev), 2.5.x (OpenPrinting/cups
+#                  master), 3.x (OpenPrinting/libcups master)
+#
+# cpdb-backend-cups depends on libcups, libcupsfilters AND cpdb-libs.  For the
+# source-CUPS legs the distro libcupsfilters-dev is the wrong ABI, so
+# ci/ci-setup.sh builds libcupsfilters (and pdfio) from source against the
+# active CUPS; cpdb-libs is always built from @master.  All the per-combination
+# work lives in that script so the legs differ only in which CUPS is provided
+# and whether they run under emulation.
+# =============================================================================
+name: Build and Test (cpdb-backend-cups, Multi-Architecture, Multi-CUPS)
 
 on:
   push:
     branches:
-    - '**'
+      - '**'
   pull_request:
     branches:
-    - '**'
+      - '**'
   workflow_dispatch:
-    
-jobs:
-  build-linux-run-tests:
 
-    runs-on: ubuntu-latest
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-matrix:
+    name: Build & Test (${{ matrix.arch }}, ${{ matrix.cups }})
+    runs-on: ${{ matrix.runs-on }}
+    # The source-* legs build their CUPS / libcupsfilters / cpdb-libs from
+    # OpenPrinting @master, an unpinned moving target: a transient breakage
+    # there reddens the leg through no fault of cpdb-backend-cups.  Keep the
+    # distro system-2x leg required (blocking) and let the source-@master legs
+    # report without blocking the PR.  ci-setup.sh annotates each failure as
+    # UPSTREAM-DEP-FAILED vs BACKEND-FAILED so a real backend regression on
+    # these legs is still visible even while non-blocking.
+    continue-on-error: ${{ matrix.cups != 'system-2x' }}
+    # Building CUPS / libcupsfilters from source under QEMU is slow; allow plenty.
+    timeout-minutes: 360
+
+    strategy:
+      fail-fast: false
+      matrix:
+        arch: [amd64, arm64, armhf, riscv64]
+        cups: [system-2x, source-2.5.x, source-3.x]
+        include:
+          - arch: amd64
+            runs-on: ubuntu-latest
+            use-qemu: false
+          - arch: arm64
+            runs-on: ubuntu-24.04-arm
+            use-qemu: false
+          - arch: armhf
+            runs-on: ubuntu-latest
+            use-qemu: true
+            qemu-arch: armv7
+          - arch: riscv64
+            runs-on: ubuntu-latest
+            use-qemu: true
+            qemu-arch: riscv64
 
     steps:
-    - uses: actions/checkout@v6
-    - name: show Ubuntu version
-      run: cat /etc/os-release | grep PRETTY_NAME | awk -F '=' '{print $2}'
-    - name: update build environment
-      run: sudo apt-get update --fix-missing -y
-    - name: install prerequisites
-      run: |
-       sudo apt-get install cups libcups2-dev libcupsfilters-dev libglib2.0-dev autoconf autopoint libdbus-1-dev libtool -y
-    - name: Install cpdb-libs Version >= 2.0.0 
-      run: |
-        cd ..
-        git clone https://github.com/OpenPrinting/cpdb-libs.git
-        cd cpdb-libs
-        ./autogen.sh
-        ./configure --prefix=/usr --enable-shared
-        make all
-        sudo make install
-        cd ..
-        cd ..
-    - name: configure 
-      env:
-        CC: /usr/bin/gcc
-      run: ./autogen.sh && ./configure --enable-debug
-    - name: make
-      run: make
-    - name: Run Tests
-      run: make check || cat src/*.log
+      - uses: actions/checkout@v4
+
+      # ==========================================
+      # NATIVE EXECUTION (amd64 and arm64)
+      # ==========================================
+      - name: Build & Test (Native)
+        if: matrix.use-qemu == false
+        env:
+          CUPS_KIND: ${{ matrix.cups }}
+          EMULATED: "0"
+        run: |
+          set -ex
+          sh ci/ci-setup.sh deps
+          sh ci/ci-setup.sh cups "${{ matrix.cups }}"
+          sh ci/ci-setup.sh pdfio
+          sh ci/ci-setup.sh libcupsfilters "${{ matrix.cups }}"
+          sh ci/ci-setup.sh cpdb-libs
+          sh ci/ci-setup.sh build-backend
+
+      - name: Upload test artifacts (Native)
+        if: matrix.use-qemu == false && always()
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpdb-backend-cups-logs-${{ matrix.arch }}-${{ matrix.cups }}
+          path: |
+            config.log
+            test-suite.log
+            src/*.log
+          if-no-files-found: ignore
+
+      # ==========================================
+      # EMULATED EXECUTION (armhf and riscv64)
+      # ==========================================
+      - name: Build & Test (Emulated)
+        if: matrix.use-qemu == true
+        uses: uraimo/run-on-arch-action@v3
+        with:
+          arch: ${{ matrix.qemu-arch }}
+          distro: ubuntu24.04
+          githubToken: ${{ github.token }}
+          install: |
+            apt-get update --fix-missing -y
+            DEBIAN_FRONTEND=noninteractive apt-get install -y tzdata ca-certificates git
+          run: |
+            set -ex
+            export CUPS_KIND="${{ matrix.cups }}"
+            export EMULATED=1
+            sh ci/ci-setup.sh deps
+            sh ci/ci-setup.sh cups "${{ matrix.cups }}"
+            sh ci/ci-setup.sh pdfio
+            sh ci/ci-setup.sh libcupsfilters "${{ matrix.cups }}"
+            sh ci/ci-setup.sh cpdb-libs
+            sh ci/ci-setup.sh build-backend
+
+      - name: Upload test artifacts (Emulated)
+        if: matrix.use-qemu == true && always()
+        continue-on-error: true
+        timeout-minutes: 5
+        uses: actions/upload-artifact@v4
+        with:
+          name: cpdb-backend-cups-logs-${{ matrix.arch }}-${{ matrix.cups }}
+          path: |
+            config.log
+            test-suite.log
+            src/*.log
+          if-no-files-found: ignore
