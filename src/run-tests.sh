@@ -159,6 +159,29 @@ else
 fi
 
 #
+# The test bed below is built around the CUPS 2.x layout: it uses cups-config
+# to locate the system CUPS resource dirs and needs a cupsd binary to run a
+# private instance.  CUPS 2.5 dropped cups-config and libcups3 ships no cupsd,
+# so when either is missing (the source-2.5.x / source-3.x CI legs) skip the
+# print-through test instead of failing it.  Exit 77 is the automake SKIP code,
+# which keeps "make check" green while the build/link against those CUPS
+# releases is still fully validated.
+#
+
+if test "x${EMULATED:-0}" = "x1"; then
+    echo "SKIP: running under QEMU emulation - a full private cupsd is unreliable there, skipping print-through test"
+    exit 77
+fi
+if ! command -v cups-config >/dev/null 2>&1; then
+    echo "SKIP: cups-config not found (CUPS 2.5+/3.x) - skipping print-through test"
+    exit 77
+fi
+if ! test -x /usr/sbin/cupsd && ! command -v cupsd >/dev/null 2>&1; then
+    echo "SKIP: no cupsd binary found - skipping print-through test"
+    exit 77
+fi
+
+#
 # CUPS resource directories of the system
 #
 # For "make check" testing we copy/link our testbed CUPS

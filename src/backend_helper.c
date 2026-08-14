@@ -168,7 +168,7 @@ void unset_hide_temp_printers(BackendObj *b, const char *dialog_name)
     if (d) d->hide_temp = FALSE;
 }
 
-static int
+static cpdb_http_timeout_ret_t
 http_timeout_cb(http_t *http,
 		void *user_data)
 {
@@ -2909,7 +2909,7 @@ GVariant *pack_cups_job(cups_job_t job)
     t[2] = g_variant_new_string(job.dest);
     t[3] = g_variant_new_string(job.user);
     t[4] = g_variant_new_string(translate_job_state(job.state));
-    t[5] = g_variant_new_string(httpGetDateString(job.creation_time));
+    t[5] = g_variant_new_string(cpdb_httpDateString(job.creation_time));
     t[6] = g_variant_new_int32(job.size);
     GVariant *tuple_variant = g_variant_new_tuple(t, 7);
     g_free(t);

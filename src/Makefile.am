@@ -18,15 +18,16 @@ backenddir = $(CPDB_BACKEND_DIR)
 backend_PROGRAMS = cups
 cups_SOURCES = \
 	print_backend_cups.c \
-	backend_helper.c backend_helper.h \
+	backend_helper.c backend_helper.h cups-compat.h \
 	cups-notifier.c cups-notifier.h
 cups_CPPFLAGS  = $(CPDB_CFLAGS)
+cups_CPPFLAGS += $(CUPS_CFLAGS)
 cups_CPPFLAGS += $(LIBCUPSFILTERS_CFLAGS)
 cups_CPPFLAGS += $(GLIB_CFLAGS)
 cups_CPPFLAGS += $(GIO_CFLAGS)
 cups_CPPFLAGS += $(GIOUNIX_CFLAGS)
 
-cups_LDADD  = -lcups -lpthread -lm
+cups_LDADD  = $(CUPS_LIBS) -lpthread -lm
 cups_LDADD += $(CPDB_LIBS)
 cups_LDADD += $(LIBCUPSFILTERS_LIBS)
 cups_LDADD += $(GLIB_LIBS)
@@ -45,9 +46,9 @@ TESTS = \
 check_PROGRAMS = test_extractHostFromURI
 test_extractHostFromURI_SOURCES = \
 	test_extractHostFromURI.c \
-	backend_helper.c backend_helper.h
-test_extractHostFromURI_CPPFLAGS = $(CPDB_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
-test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) -lcups -lcupsfilters
+	backend_helper.c backend_helper.h cups-compat.h
+test_extractHostFromURI_CPPFLAGS = $(CPDB_CFLAGS) $(CUPS_CFLAGS) $(LIBCUPSFILTERS_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
+test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) $(CUPS_LIBS) $(LIBCUPSFILTERS_LIBS)
 
 EXTRA_DIST = \
         run-tests.sh \

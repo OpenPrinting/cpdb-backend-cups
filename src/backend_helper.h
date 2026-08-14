@@ -10,6 +10,8 @@
 #include <cups/ppd.h>
 #include <cupsfilters/catalog.h>
 
+#include "cups-compat.h"
+
 #include <cpdb/backend.h>
 
 /* For cups-notifier */
