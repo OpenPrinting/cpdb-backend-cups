@@ -596,6 +596,7 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
     if (dest_copy == NULL)
     {
         logerror("Error creating PrinterCUPS");
+        free(p);
         return NULL;
     }
     p->dest = dest_copy;
@@ -897,14 +898,21 @@ int get_all_options(PrinterCUPS *p, Option **options)
     int sz = sizeof(additional_options) / sizeof(char *);
 
     /** Add additional attributes to current option_names list **/
-    option_names = realloc(option_names, sizeof(char *) * (num_options+sz)); 
-    for (int i=0; i<sz; i++) 
+    char **tmp_option_names = realloc(option_names, sizeof(char *) * (num_options+sz));
+    if (tmp_option_names == NULL)
+    {
+        free(option_names);
+        *options = NULL;
+        return 0;
+    }
+    option_names = tmp_option_names;
+    for (int i=0; i<sz; i++)
         option_names[num_options+i] = g_strdup(additional_options[i]);
     num_options += sz;
 
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
-    Option *opts = (Option *)(malloc(sizeof(Option) * (num_options+20))); /**Option array, which will be filled **/
+    Option *opts = (Option *)(calloc(num_options+20, sizeof(Option))); /**Option array, which will be filled **/
     ipp_attribute_t *vals;                                                /** Variable to store the values of the options **/
     
 
@@ -1310,7 +1318,14 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
 
     char *additional_options[] = {"media-source", "media-type"};
     int sz = sizeof(additional_options) / sizeof(char *);
-    option_names = realloc(option_names, sizeof(char *) * (num_options + sz));
+    char **tmp_option_names = realloc(option_names, sizeof(char *) * (num_options + sz));
+    if (tmp_option_names == NULL)
+    {
+        free(option_names);
+        *caps = NULL;
+        return 0;
+    }
+    option_names = tmp_option_names;
     for (int i = 0; i < sz; i++)
         option_names[num_options + i] = g_strdup(additional_options[i]);
     num_options += sz;
@@ -2500,8 +2515,6 @@ char *extractHostFromURI(const char *uri) {
         strncpy(host, host_start, host_end - host_start);
         host[host_end - host_start] = '\0'; // Null-terminate the string
     }
-
-    fprintf(stderr, "XXX12: URI: %s Host: %s\n", uri, host);
 
     return host;
 }
