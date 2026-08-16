@@ -48,3 +48,28 @@ NOTE: The communication protocol between frontends and backends has changed (Job
 - [Nilanjana Lodh's Google Summer of Code 2017 Final Report](https://nilanjanalodh.github.io/common-print-dialog-gsoc17/)
 
 - [Gaurav Guleria's Google Summer of Code 2022 Final Report](https://github.com/TinyTrebuchet/gsoc22/)
+
+## Continuous Integration and Static Analysis
+
+This repository is checked on every push and pull request by GitHub Actions
+workflows in `.github/workflows/`:
+
+- **Build** (`build.yml`) - builds the project (multi-architecture where
+  applicable) so build/link regressions are caught early.
+- **CodeQL** (`codeql.yml`) - GitHub's semantic static-analysis engine, using the
+  `security-and-quality` query suite.
+
+### CodeQL Static Analysis Configuration
+
+This repository uses a custom GitHub Actions workflow for CodeQL static analysis located at `.github/workflows/codeql.yml`. To ensure accurate analysis and avoid conflicts with GitHub's default settings, the following repository configurations are required:
+
+1. **Enable Advanced Setup**:
+   - Go to **Settings** -> **Code security and analysis**.
+   - Under **Code scanning**, locate **CodeQL analysis**.
+   - If "Default" is enabled, click the three dots (...) and select **Switch to advanced**.
+2. **Disable Default Setup**:
+   - The "Default" setup must be disabled for the custom workflow to upload results successfully.
+3. **Custom Workflow Dependencies**:
+   - Our custom workflow is designed to install specific project dependencies and perform a manual build before the analysis. This ensures that CodeQL has a complete build graph for the C sources in this repository.
+
+*Note: If the Default setup is active, GitHub may reject the results uploaded by the manual workflow, causing the CI job to fail.*
