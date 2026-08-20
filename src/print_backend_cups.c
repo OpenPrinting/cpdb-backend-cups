@@ -558,6 +558,7 @@ static gboolean on_handle_get_option_translation(PrintBackend *interface,
         translation = g_strdup(option_name);
     print_backend_complete_get_option_translation(interface, invocation, translation);
     g_mutex_unlock(&b->dialogs_mutex);
+    g_free(translation);
     return TRUE;
 }
 
@@ -585,6 +586,7 @@ static gboolean on_handle_get_choice_translation(PrintBackend *interface,
         translation = g_strdup(choice_name);
     print_backend_complete_get_choice_translation(interface, invocation, translation);
     g_mutex_unlock(&b->dialogs_mutex);
+    g_free(translation);
     return TRUE;
 }
 

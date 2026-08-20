@@ -5,6 +5,7 @@
 .vscode/
 .gdb_history
 gmon.out
+*.deb
 .gitignore
 aclocal.m4
 aclocal.*
