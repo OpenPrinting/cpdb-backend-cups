@@ -168,7 +168,7 @@ void unset_hide_temp_printers(BackendObj *b, const char *dialog_name)
     if (d) d->hide_temp = FALSE;
 }
 
-static cpdb_http_timeout_ret_t
+static int
 http_timeout_cb(http_t *http,
 		void *user_data)
 {
@@ -898,15 +898,14 @@ int get_all_options(PrinterCUPS *p, Option **options)
     int sz = sizeof(additional_options) / sizeof(char *);
 
     /** Add additional attributes to current option_names list **/
-    char **tmp_option_names = realloc(option_names, sizeof(char *) * (num_options+sz));
-    if (tmp_option_names == NULL)
-    {
+    char **tmp_names = realloc(option_names, sizeof(char *) * (num_options+sz)); 
+    if (!tmp_names) {
+        for (int k = 0; k < num_options; k++) g_free(option_names[k]);
         free(option_names);
-        *options = NULL;
-        return 0;
+        return NULL;
     }
-    option_names = tmp_option_names;
-    for (int i=0; i<sz; i++)
+    option_names = tmp_names;
+    for (int i=0; i<sz; i++) 
         option_names[num_options+i] = g_strdup(additional_options[i]);
     num_options += sz;
 
@@ -936,7 +935,10 @@ int get_all_options(PrinterCUPS *p, Option **options)
             (strcmp(option_names[i], "position") == 0) ||
             (strcmp(option_names[i], "print-scaling") == 0)
         )
+        {
+            g_free(option_names[i]);
             continue;
+        }
 
         opts[optsIndex].option_name = option_names[i];
         vals = cupsFindDestSupported(CUPS_HTTP_DEFAULT, p->dest, p->dinfo, option_names[i]);
@@ -976,6 +978,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -989,6 +992,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1008,6 +1012,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup("none,none");
     }
     optsIndex++;
@@ -1021,6 +1026,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1034,6 +1040,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1051,6 +1058,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1070,6 +1078,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1085,20 +1094,36 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     else
     {
         if (strcmp(opts[optsIndex].default_value, "potrait") == 0)
+        {
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
+        }
         else if (strcmp(opts[optsIndex].default_value, "landscape") == 0)
+        {
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[1]);
+        }
         else if (strcmp(opts[optsIndex].default_value, "reverse-landscape") == 0)
+        {
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[2]);
+        }
         else if (strcmp(opts[optsIndex].default_value, "reverse-potrait") == 0)
+        {
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[3]);
+        }
         else
+        {
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
+        }
     }
     optsIndex++;
 
@@ -1114,6 +1139,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1127,6 +1153,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1141,6 +1168,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1161,6 +1189,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1177,6 +1206,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup(opts[optsIndex].supported_values[0]);
     }
     optsIndex++;
@@ -1188,6 +1218,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     opts[optsIndex].default_value = get_default(p, opts[optsIndex].option_name);
     if (strcmp(opts[optsIndex].default_value, "NA") == 0)
     {
+        g_free(opts[optsIndex].default_value);
         opts[optsIndex].default_value = g_strdup("");
     }
     optsIndex++;
@@ -1243,6 +1274,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     }
 
     *options = (Option *) realloc(opts, sizeof(Option) * optsIndex);
+    g_free(option_names);
     return optsIndex;
 }
 
@@ -1318,14 +1350,13 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
 
     char *additional_options[] = {"media-source", "media-type"};
     int sz = sizeof(additional_options) / sizeof(char *);
-    char **tmp_option_names = realloc(option_names, sizeof(char *) * (num_options + sz));
-    if (tmp_option_names == NULL)
-    {
+    char **tmp_names = realloc(option_names, sizeof(char *) * (num_options + sz));
+    if (!tmp_names) {
+        for (int k = 0; k < num_options; k++) g_free(option_names[k]);
         free(option_names);
-        *caps = NULL;
-        return 0;
+        return NULL;
     }
-    option_names = tmp_option_names;
+    option_names = tmp_names;
     for (int i = 0; i < sz; i++)
         option_names[num_options + i] = g_strdup(additional_options[i]);
     num_options += sz;
@@ -1871,12 +1902,8 @@ const char *get_printer_state(PrinterCUPS *p)
     if ((attr = ippFindAttribute(response, "printer-state",
                                  IPP_TAG_ENUM)) != NULL)
     {
-        int state = ippGetInteger(attr, 0);
-        logdebug("printer-state=%d\n", state);
-        if (state >= 0 && state < 6)
-            str = map->state[state];
-        else
-            str = "NA";
+        logdebug("printer-state=%d\n", ippGetInteger(attr, 0));
+        str = map->state[ippGetInteger(attr, 0)];
     }
     return str;
 }
@@ -2319,8 +2346,6 @@ void free_Dialog(Dialog *d)
 Mappings *get_new_Mappings()
 {
     Mappings *m = (Mappings *)(malloc(sizeof(Mappings)));
-    for (int i = 0; i < 6; i ++)
-        m->state[i] = "NA";
     m->state[3] = CPDB_STATE_IDLE;
     m->state[4] = CPDB_STATE_PRINTING;
     m->state[5] = CPDB_STATE_STOPPED;
@@ -2339,10 +2364,7 @@ const char *cups_printer_state(cups_dest_t *dest)
                                       dest->options);
     if (state == NULL)
         return "NA";
-    int idx = state[0] - '0';
-    if (idx < 0 || idx >= 6)
-        return "NA";
-    return map->state[idx];
+    return map->state[state[0] - '0'];
 }
 
 gboolean cups_is_accepting_jobs(cups_dest_t *dest)
@@ -2515,6 +2537,8 @@ char *extractHostFromURI(const char *uri) {
         strncpy(host, host_start, host_end - host_start);
         host[host_end - host_start] = '\0'; // Null-terminate the string
     }
+
+    fprintf(stderr, "XXX12: URI: %s Host: %s\n", uri, host);
 
     return host;
 }
@@ -2922,7 +2946,7 @@ GVariant *pack_cups_job(cups_job_t job)
     t[2] = g_variant_new_string(job.dest);
     t[3] = g_variant_new_string(job.user);
     t[4] = g_variant_new_string(translate_job_state(job.state));
-    t[5] = g_variant_new_string(cpdb_httpDateString(job.creation_time));
+    t[5] = g_variant_new_string(httpGetDateString(job.creation_time));
     t[6] = g_variant_new_int32(job.size);
     GVariant *tuple_variant = g_variant_new_tuple(t, 7);
     g_free(t);
