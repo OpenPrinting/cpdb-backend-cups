@@ -1,0 +1,109 @@
+B1 verification: backend translation path through a real CUPS instance
+======================================================================
+
+Date: 2026-08-17
+Testbed: isolated CUPS instance (alternative port 8631) + CPDB CUPS
+         backend from source tree + cpdb-text-frontend (system install).
+         Setup mirrors src/run-tests.sh.  Harness: /tmp/cpdb-b1test.sh.
+         Raw output: b1-raw-output.log (this directory).
+
+Environment notes
+-----------------
+- System locales available: C, C.utf8, POSIX only (no de_DE.UTF-8 or
+  fr_FR.UTF-8 generated).  The testbed symlinks the system CUPS .po
+  catalogs ($sys_datadir/locale/*/cups_*.po) into $LOCALEDIR, so the
+  catalog lookup does not depend on installed locales.
+- de:  cups_de.po carries real translations, e.g.
+       msgid "print-color-mode" / msgstr "Farbdruckmodus"
+- fr:  cups_fr.po exists (4017 msgids) but msgstrs are empty, e.g.
+       msgid "print-color-mode" / msgstr ""
+       -> the French catalog is effectively untranslated.
+- The backend exits once the last frontend disconnects, so every
+  scenario starts a fresh backend instance (same as run-tests.sh B4).
+
+Scenario 1: fully translated locale (de_DE.UTF-8)
+-------------------------------------------------
+Command:
+    env LANG=de_DE.UTF-8 LC_ALL=de_DE.UTF-8 LC_MESSAGES=de_DE.UTF-8 \
+        cpdb-text-frontend  (then: get-all-translations printer-1 CUPS)
+
+Result: translations ARE returned in German.
+  Backend log (backend_scenario_1.log):
+    Translation 'OPT#print-color-mode'      : 'Farbdruckmodus'
+    Translation 'OPT#print-color-mode#monochrome' : 'Monochrom'
+    Translation 'OPT#print-color-mode#color'      : 'Farbe'
+    Translation 'OPT#copies'                : 'Kopien'
+    Translation 'OPT#printer-resolution'    : 'Druckauflösung'
+  Frontend log (b1-raw-output.log):
+    Fetched translation 'OPT#print-color-mode' : 'Farbdruckmodus'
+  PASS: option and choice names translated, differ from raw English.
+
+Scenario 2: uncovered locale (fr_FR.UTF-8, empty msgstr)
+--------------------------------------------------------
+Command:
+    env LANG=fr_FR.UTF-8 LC_ALL=fr_FR.UTF-8 LC_MESSAGES=fr_FR.UTF-8 \
+        cpdb-text-frontend  (then: get-all-translations printer-1 CUPS)
+
+Result: get-all-translations returns only group translations
+  (28 GRP# entries, all raw English: "Copies", "Job Management", ...)
+  and NO OPT#/choice entries (0 of 103 possible lines).
+  Backend log (backend_scenario_2.log) shows only GRP# lines.
+
+Root cause: cfCatalogLoad() loads the French catalog, but because the
+  msgstr is empty, cfCatalogLookUpOption("print-color-mode", ...) returns
+  NULL, get_option_translation() then returns NULL, and the option entry
+  is skipped in get_printer_translations().  Same for choices.
+  (Verified directly: cfCatalogLookUpOption -> NULL for fr_FR.UTF-8,
+   'Farbdruckmodus' for de_DE.UTF-8, 'Print Color Mode' for en.)
+
+Fallback still works for individual lookups:
+  Command:
+    env -u LC_ALL LANG=fr_FR.UTF-8 LC_MESSAGES=fr_FR.UTF-8 \
+        cpdb-text-frontend
+    get-option-translation print-color-mode printer-1 CUPS
+    get-choice-translation print-color-mode color printer-1 CUPS
+  Result (b1-raw-output.log):
+    print-color-mode
+    color
+  i.e. cpdbGetOptionTranslation() falls back to the raw (English) name
+  when the key is missing from the translation table.
+
+  CONCLUSION: The uncovered-locale fallback is clean English.  The only
+  caveat is that get-all-translations omits OPT keys for fully
+  untranslated catalogs; consumers using cpdbGetOptionTranslation() /
+  cpdbGetChoiceTranslation() / cpdbGetGroupTranslation() still receive
+  raw names.  This is PRE-EXISTING behavior (present in the common base
+  commit 194852d), not introduced by the leak fixes on these branches.
+
+Scenario 3: bare base language, no region/encoding (LANG=de)
+------------------------------------------------------------
+Command:
+    env -u LC_ALL -u LC_MESSAGES -u LC_MONETARY -u LC_NUMERIC \
+         -u LC_TIME LANG=de cpdb-text-frontend
+    (then: get-all-translations printer-1 CUPS)
+
+Result: translations ARE returned in German, same as scenario 1.
+  Backend log (backend_scenario_3.log):
+    Translation 'OPT#print-color-mode' : 'Farbdruckmodus'
+    Translation 'OPT#print-color-mode#monochrome' : 'Monochrom'
+  PASS: g_get_language_names()[0] == "de" is mapped to the German
+  catalog.  No region suffix required.
+
+  Note: the frontend sends g_get_language_names()[0].  If the harness
+  left LC_MESSAGES exported (e.g. LC_MESSAGES=C from run-tests.sh), GLib
+  reports "C" and no translation is returned - so a bare LANG=de test
+  must unset the LC_* overrides.  The run-tests.sh B4 test sets
+  LANG/LC_ALL/LC_MESSAGES all to de_DE.UTF-8, so it is unaffected.
+
+Summary
+-------
+Scenario 1 (de_DE.UTF-8):          translated (PASS)
+Scenario 2 (fr_FR.UTF-8):          clean English fallback (PASS, with
+                                   the documented get-all-translations
+                                   OPT-omission caveat)
+Scenario 3 (bare LANG=de):         translated (PASS)
+
+All three scenarios exercised the leak-fixed translation path
+(get_option_translation / get_choice_translation / get_printer_translations)
+without errors or crashes.  ASAN leak checks of this path were already
+clean after the branch-1 fixes.

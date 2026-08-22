@@ -159,29 +159,6 @@ else
 fi
 
 #
-# The test bed below is built around the CUPS 2.x layout: it uses cups-config
-# to locate the system CUPS resource dirs and needs a cupsd binary to run a
-# private instance.  CUPS 2.5 dropped cups-config and libcups3 ships no cupsd,
-# so when either is missing (the source-2.5.x / source-3.x CI legs) skip the
-# print-through test instead of failing it.  Exit 77 is the automake SKIP code,
-# which keeps "make check" green while the build/link against those CUPS
-# releases is still fully validated.
-#
-
-if test "x${EMULATED:-0}" = "x1"; then
-    echo "SKIP: running under QEMU emulation - a full private cupsd is unreliable there, skipping print-through test"
-    exit 77
-fi
-if ! command -v cups-config >/dev/null 2>&1; then
-    echo "SKIP: cups-config not found (CUPS 2.5+/3.x) - skipping print-through test"
-    exit 77
-fi
-if ! test -x /usr/sbin/cupsd && ! command -v cupsd >/dev/null 2>&1; then
-    echo "SKIP: no cupsd binary found - skipping print-through test"
-    exit 77
-fi
-
-#
 # CUPS resource directories of the system
 #
 # For "make check" testing we copy/link our testbed CUPS
@@ -682,6 +659,105 @@ if ! grep -i 'Document send succeeded' $BACKEND_LOG; then
 fi
 
 echo
+
+#
+# Check that the backend returns translated option and choice names when
+# the frontend runs in a locale for which a CUPS translation catalog is
+# available.
+#
+# The CUPS backend exits once the last frontend disconnects, so we start
+# a fresh backend instance for this test.  We only run this test when
+# the German CUPS catalog actually carries a translation (the "msgstr"
+# is not empty), and we skip it gracefully otherwise, so that the test
+# does not fail on systems without translated CUPS catalogs.
+#
+
+echo "Locale-based translation test:"
+
+locale="de_DE.UTF-8"
+grep_msgid='print-color-mode'
+grep_translation='Farbdruckmodus'
+
+# Determine whether a usable German CUPS translation exists
+de_po=""
+for candidate in $sys_datadir/locale/de/cups_de.po \
+                 $sys_datadir/locale/de_DE/cups_de.po; do
+    if test -f "$candidate"; then
+        de_po="$candidate"
+        break
+    fi
+done
+
+if test -n "$de_po" && \
+   grep -A1 "^msgid \"$grep_msgid\"" "$de_po" 2>/dev/null | \
+   grep -q "^msgstr \"[^\"]"; then
+    # Start a fresh backend instance for the locale test
+    echo "Starting CPDB CUPS backend for locale test:"
+    echo "    $runcups $BACKEND >$BACKEND_LOG 2>&1 &"
+    echo ""
+
+    $runcups $BACKEND >$BACKEND_LOG 2>&1 &
+    BACKEND_PID=$!
+
+    sleep 3
+
+    # Run a short-lived frontend session in the German locale and ask
+    # for the translations of all options and choices of the queue.
+    echo "Running frontend with $locale locale:"
+    echo "    $FRONTEND > $FRONTEND_LOG 2>&1 &"
+    echo ""
+
+    ( \
+      sleep 5; \
+      echo get-all-translations $QUEUE CUPS; \
+      sleep 2; \
+      echo stop \
+    ) | env LANG=$locale LC_ALL=$locale LC_MESSAGES=$locale \
+          $FRONTEND > $FRONTEND_LOG 2>&1 &
+    FRONTEND_PID=$!
+
+    i=0
+    while kill -0 $FRONTEND_PID >/dev/null 2>&1; do
+	i=$((i+1))
+	if test $i -ge 15; then
+	    kill -KILL $FRONTEND_PID >/dev/null 2>&1 || true
+	    FRONTEND_PID=
+	    echo "FAIL: Frontend keeps running!"
+	    exit 1
+	fi
+	sleep 1
+    done
+    FRONTEND_PID=
+
+    # Stop the backend again
+    if kill -0 $BACKEND_PID >/dev/null 2>&1; then
+	kill -TERM $BACKEND_PID
+	i=0
+	while kill -0 $BACKEND_PID >/dev/null 2>&1; do
+	    i=$((i+1))
+	    if test $i -ge 3; then
+		kill -KILL $BACKEND_PID >/dev/null 2>&1 || true
+		BACKEND_PID=
+		echo "FAIL: Backend did not shut down!"
+		exit 1
+	    fi
+	    sleep 1
+	done
+    fi
+    BACKEND_PID=
+
+    # Did we get the German translation of "print-color-mode"?
+    echo "Translated option name \"$grep_msgid\" in $locale locale:"
+    if ! grep "$grep_translation" $FRONTEND_LOG; then
+        echo "FAIL: No translation for \"$grep_msgid\" in $locale locale!"
+        exit 1
+    fi
+
+    echo
+else
+    echo "SKIP: No German CUPS translation catalog available."
+    echo ""
+fi
 
 #
 # Tests successfully completed

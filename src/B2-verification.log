@@ -1,0 +1,95 @@
+B2 verification: printer-strings-uri merge path
+================================================
+
+Date: 2026-08-17
+Testbed: same isolated CUPS instance as B1 (port 8631) + CPDB CUPS
+         backend from source tree + cpdb-text-frontend.
+         Harness: /tmp/cpdb-b2test.sh.
+         Raw output: b2-raw-output.log (this directory).
+
+Background / prior assumption
+-----------------------------
+Earlier analysis assumed the `printer-strings-uri` branch in
+get_option_translation() / get_choice_translation() could NOT be
+exercised through CUPS 2.4.7 for local queues.  That assumption turned
+out to be WRONG: CUPS 2.4.7 cupsd DOES expose printer-strings-uri for
+every queue (local and remote), pointing at a cache-hosted strings
+file:
+
+    http://<cupsd>/strings/printer-<name>.strings
+
+The backend's request for the "printer-strings-uri" attribute succeeds,
+and cupsd answers with a GET of that cache file.  The reason the path
+looked untested before is that the cache file is EMPTY (0 bytes) when
+the queue's PPD carries no localized strings, so cfCatalogLoad() adds
+nothing and the system catalog is used - which is exactly the intended
+fallback.
+
+Verification procedure
+----------------------
+1. Set up the isolated CUPS testbed with three queues (printer-1,
+   printer-2, printer-ipp) exactly like B1.
+2. After cupsd starts, populate the cache strings file that cupsd
+   serves for printer-1:
+       $BASE/cache/printer-1.strings
+   with printer-specific overrides in text/strings format:
+       "print-color-mode"              = "Printer Color Mode"
+       "print-color-mode.monochrome"   = "Printer Monochrome"
+       "print-color-mode.color"        = "Printer Colour"
+       "copies"                        = "Printer Copies"
+       "job-sheets"                    = "Printer Job Sheets"
+3. Run cpdb-text-frontend under de_DE.UTF-8 (German), so the system
+   catalog would produce "Farbdruckmodus" / "Monochrom" / "Farbe" if
+   the printer-strings-uri merge did NOT take place.
+4. Issue, in order:
+       get-option-translation print-color-mode printer-1 CUPS
+       get-choice-translation print-color-mode monochrome printer-1 CUPS
+       get-choice-translation print-color-mode color printer-1 CUPS
+
+Observed results (b2-raw-output.log)
+------------------------------------
+    Obtained translation=Printer Color Mode;
+      option=print-color-mode; locale=de_DE.UTF-8; printer=printer-1#CUPS
+    Obtained translation=Printer Monochrome;
+      option=print-color-mode; choice=monochrome; ...
+    Obtained translation=Printer Colour;
+      option=print-color-mode; choice=color; ...
+
+i.e. the printer-specific strings file OVERRODE the German system
+catalog.  cfCatalogLookUpOption() / cfCatalogLookUpChoice() consult the
+printer_options catalog FIRST, which is why "Printer Color Mode" (from
+printer-1.strings) wins over "Farbdruckmodus" (from cups_de.po).
+
+cupsd access evidence (error_log):
+    [Client 33x] GET /strings/printer-1.strings HTTP/1.1
+    [Client 33x] Processing GET /strings/printer-1.strings
+    -> the backend's cfCatalogLoad(uri, ...) fetched the file over HTTP.
+
+Negative control: the same queue with an EMPTY strings cache file
+(original state) returns the German system translations
+("Farbdruckmodus" / "Monochrom"), as captured in B1 scenario 1.  This
+proves the merge is driven by the printer-strings-uri content and not
+by something else.
+
+Note on printer-ipp queue
+-------------------------
+The B2 testbed also contains queue printer-ipp with
+DeviceURI ipp://localhost:8632/ipp/print pointing at an ippeveprinter
+instance serving its own /en.strings.  cupsd did NOT relay the remote
+printer-strings-uri to the backend (cupsd serves its own cached
+attributes for Get-Printer-Attributes), so the remote-printer case
+behaves identically to the local case: the backend reads the strings
+URI cupsd hands out.  This is consistent: CPDB reads translations from
+the CUPS server it talks to, which for printer-strings-uri is always
+cupsd's own /strings/printer-<name>.strings.
+
+Conclusion
+----------
+PASS.  The printer-strings-uri merge path in get_option_translation()
+and get_choice_translation() (backend_helper.c ~line 2782 / ~line 2828)
+was exercised end-to-end with real CUPS 2.4.7 and verified to override
+the system catalog correctly, with the documented fallback when the
+strings file is empty.  No errors, no crashes; this path was part of
+the B3 leak-fix scope (g_variant_builder / ippDelete / g_free fixes in
+the surrounding translation code) and is now covered by an executable
+verification.
