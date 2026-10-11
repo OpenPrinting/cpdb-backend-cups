@@ -176,8 +176,67 @@ if ! command -v cups-config >/dev/null 2>&1; then
     echo "SKIP: cups-config not found (CUPS 2.5+/3.x) - skipping print-through test"
     exit 77
 fi
-if ! test -x /usr/sbin/cupsd && ! command -v cupsd >/dev/null 2>&1; then
-    echo "SKIP: no cupsd binary found - skipping print-through test"
+
+#
+# Locate a usable cupsd binary.
+#
+# The test bed needs a cupsd binary to run a private CUPS instance.
+# Historically only /usr/sbin/cupsd was tried, which breaks on distros
+# using a different layout (e.g. Arch with /usr/bin/cupsd via usrmerge)
+# or with restrictive permissions (e.g. 750 root:lp unreadable by the
+# build user, issue #31). Try several methods in order and use the first
+# readable and executable hit, so one failing method falls back to another.
+#
+# Order (historical system paths first, so existing passing setups keep
+# using the same cupsd as before; PATH/configure paths only as fallback):
+#   1. $CUPS_TEST_CUPSD explicit override (useful for manual testing)
+#   2. well-known system paths: /usr/sbin/cupsd, /usr/bin/cupsd, /sbin/cupsd
+#      (covers Debian/Ubuntu and Arch usrmerge layouts)
+#   3. first `command -v cupsd` hit from PATH
+#   4. $CUPS_SBINDIR/cupsd (configure-detected sbin dir, see TESTS_ENVIRONMENT)
+#
+# Prints the usable path, or nothing if none was found.
+#
+
+find_cupsd()
+{
+    if test -n "${CUPS_TEST_CUPSD:-}"; then
+        if test -x "$CUPS_TEST_CUPSD" && test -r "$CUPS_TEST_CUPSD"; then
+            echo "$CUPS_TEST_CUPSD"
+            return 0
+        else
+            echo "WARNING: CUPS_TEST_CUPSD=$CUPS_TEST_CUPSD is not readable/executable, ignoring override" >&2
+        fi
+    fi
+
+    for _cand in /usr/sbin/cupsd /usr/bin/cupsd /sbin/cupsd; do
+        if test -x "$_cand" && test -r "$_cand"; then
+            echo "$_cand"
+            return 0
+        fi
+    done
+
+    if command -v cupsd >/dev/null 2>&1; then
+        _cupsd_path=`command -v cupsd`
+        if test -x "$_cupsd_path" && test -r "$_cupsd_path"; then
+            echo "$_cupsd_path"
+            return 0
+        fi
+    fi
+
+    if test -n "${CUPS_SBINDIR:-}"; then
+        if test -x "$CUPS_SBINDIR/cupsd" && test -r "$CUPS_SBINDIR/cupsd"; then
+            echo "$CUPS_SBINDIR/cupsd"
+            return 0
+        fi
+    fi
+
+    return 1
+}
+
+CUPSD_SRC=`find_cupsd` || CUPSD_SRC=""
+if test -z "$CUPSD_SRC"; then
+    echo "SKIP: no readable/executable cupsd binary found - skipping print-through test"
     exit 77
 fi
 
@@ -259,10 +318,19 @@ mkdir $BASE/ssl
 #
 # We copy the cupsd executable to break it off from the Debian/Ubuntu
 # package's AppArmor capsule, so that it can work with our test bed
-# directories
+# directories. If the copy fails (e.g. unreadable system binary on some
+# distros, see issue #31), fall back to running the found cupsd in place
+# instead of failing the whole test bed with a cascade of errors.
 #
 
-cp /usr/sbin/cupsd $BASE/bin/
+CUPSD_BIN=""
+if cp "$CUPSD_SRC" $BASE/bin/; then
+    CUPSD_BIN="$BASE/bin/cupsd"
+else
+    echo "WARNING: cannot copy $CUPSD_SRC to $BASE/bin/ (Permission denied or I/O error), running cupsd in place" >&2
+    ls -l "$CUPSD_SRC" >&2 || true
+    CUPSD_BIN="$CUPSD_SRC"
+fi
 
 ln -s $sys_serverbin/backend/dnssd $BASE/bin/backend
 ln -s $sys_serverbin/backend/http $BASE/bin/backend
@@ -495,15 +563,15 @@ export LC_MESSAGES
 #
 
 echo "Testing CUPS config files:"
-echo "    $runcups $BASE/bin/cupsd -t -s $BASE/cups-files.conf"
+echo "    $runcups $CUPSD_BIN -t -s $BASE/cups-files.conf"
 echo ""
 
-$runcups $BASE/bin/cupsd -t -s $BASE/cups-files.conf
+$runcups $CUPSD_BIN -t -s $BASE/cups-files.conf
 
-echo "    $runcups $BASE/bin/cupsd -t -c $BASE/cupsd.conf"
+echo "    $runcups $CUPSD_BIN -t -c $BASE/cupsd.conf"
 echo ""
 
-$runcups $BASE/bin/cupsd -t -c $BASE/cupsd.conf
+$runcups $CUPSD_BIN -t -c $BASE/cupsd.conf
 
 echo ""
 
@@ -512,10 +580,10 @@ echo ""
 #
 
 echo "Starting cupsd:"
-echo "    $runcups $BASE/bin/cupsd -c $BASE/cupsd.conf -f >$BASE/log/cupsd_debug_log 2>&1 &"
+echo "    $runcups $CUPSD_BIN -c $BASE/cupsd.conf -f >$BASE/log/cupsd_debug_log 2>&1 &"
 echo ""
 
-$runcups $BASE/bin/cupsd -c $BASE/cupsd.conf -f >$BASE/log/cupsd_debug_log 2>&1 &
+$runcups $CUPSD_BIN -c $BASE/cupsd.conf -f >$BASE/log/cupsd_debug_log 2>&1 &
 
 cupsd=$!
 
