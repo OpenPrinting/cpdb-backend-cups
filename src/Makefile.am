@@ -42,6 +42,10 @@ TESTS = \
         run-tests.sh \
         test_extractHostFromURI
 
+# Export the configure-detected sbin dir to the test scripts so
+# run-tests.sh can use it as one of the cupsd lookup methods.
+TESTS_ENVIRONMENT = CUPS_SBINDIR="$(CUPS_SBINDIR)"
+
 # Unit test program
 check_PROGRAMS = test_extractHostFromURI
 test_extractHostFromURI_SOURCES = \
