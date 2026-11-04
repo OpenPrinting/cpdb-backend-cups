@@ -40,19 +40,26 @@ cups_LDADD += $(GIOUNIX_LIBS)
 
 TESTS = \
         run-tests.sh \
-        test_extractHostFromURI
+        test_extractHostFromURI \
+        test_missing_dialog
 
 # Export the configure-detected sbin dir to the test scripts so
 # run-tests.sh can use it as one of the cupsd lookup methods.
 TESTS_ENVIRONMENT = CUPS_SBINDIR="$(CUPS_SBINDIR)"
 
 # Unit test program
-check_PROGRAMS = test_extractHostFromURI
+check_PROGRAMS = test_extractHostFromURI test_missing_dialog
 test_extractHostFromURI_SOURCES = \
 	test_extractHostFromURI.c \
 	backend_helper.c backend_helper.h cups-compat.h
 test_extractHostFromURI_CPPFLAGS = $(CPDB_CFLAGS) $(CUPS_CFLAGS) $(LIBCUPSFILTERS_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
 test_extractHostFromURI_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) $(CUPS_LIBS) $(LIBCUPSFILTERS_LIBS)
+
+test_missing_dialog_SOURCES = \
+	test_missing_dialog.c \
+	backend_helper.c backend_helper.h cups-compat.h
+test_missing_dialog_CPPFLAGS = $(CPDB_CFLAGS) $(CUPS_CFLAGS) $(LIBCUPSFILTERS_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
+test_missing_dialog_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) $(CUPS_LIBS) $(LIBCUPSFILTERS_LIBS)
 
 EXTRA_DIST = \
         run-tests.sh \
