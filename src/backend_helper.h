@@ -304,6 +304,9 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 int get_all_capabilities(PrinterCUPS *p, Capability **caps,
                          const char *locale);
 
+int settings_to_cups_options(GVariant *settings, int num_settings,
+                             cups_option_t **options);
+
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
                   char *error_msg, int error_msg_len, BackendObj *b);
