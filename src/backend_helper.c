@@ -563,7 +563,8 @@ PrinterCUPS *get_printer_by_name(BackendObj *b, const char *dialog_name, const c
 {
     // called with dialogs_mutex held
     GHashTable *printers = get_dialog_printers(b, dialog_name);
-    g_assert_nonnull(printers);
+    if (printers == NULL)
+        return NULL;
     PrinterCUPS *p = (g_hash_table_lookup(printers, printer_name));
     if (p == NULL)
     {
@@ -576,7 +577,8 @@ cups_dest_t *get_dest_by_name(BackendObj *b, const char *dialog_name, const char
 {
     // called with dialogs_mutex held
     GHashTable *printers = get_dialog_printers(b, dialog_name);
-    g_assert_nonnull(printers);
+    if (printers == NULL)
+        return NULL;
     PrinterCUPS *p = (g_hash_table_lookup(printers, printer_name));
     if (p == NULL)
     {
