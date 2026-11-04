@@ -1929,7 +1929,9 @@ settings_to_cups_options(GVariant *settings, int num_settings,
     cups_option_t *options = NULL;
     int num_options = 0;
     GVariantIter *iter;
-    char *option_name, *option_value;
+    char *option_name = NULL;
+    char *option_value = NULL;
+    gboolean more = FALSE;
     int i;
 
     if (num_settings <= 0)
@@ -1941,7 +1943,9 @@ settings_to_cups_options(GVariant *settings, int num_settings,
     g_variant_get(settings, "a(ss)", &iter);
     for (i = 0; i < num_settings; i++)
     {
-        g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
+        more = g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
+        if (!more)
+            break;
         logdebug(" %s : %s\n", option_name, option_value);
 
         /**
@@ -1952,6 +1956,11 @@ settings_to_cups_options(GVariant *settings, int num_settings,
          * use PWG names instead
          */
         num_options = cupsAddOption(option_name, option_value, num_options, &options);
+    }
+    if (more)
+    {
+        g_free(option_name);
+        g_free(option_value);
     }
     g_variant_iter_free(iter);
     *out = options;
