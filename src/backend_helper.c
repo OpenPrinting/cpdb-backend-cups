@@ -1947,14 +1947,6 @@ settings_to_cups_options(GVariant *settings, int num_settings,
         if (!more)
             break;
         logdebug(" %s : %s\n", option_name, option_value);
-
-        /**
-         * to do:
-         * instead of directly adding the option,convert it from the frontend's lingo 
-         * to the specific lingo of the backend
-         * 
-         * use PWG names instead
-         */
         num_options = cupsAddOption(option_name, option_value, num_options, &options);
     }
     if (more)
