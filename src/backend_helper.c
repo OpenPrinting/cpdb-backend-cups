@@ -1924,33 +1924,51 @@ void backend_obj_wait_for_print_threads(BackendObj *b)
 }
 
 
+int
+settings_to_cups_options(GVariant *settings, int num_settings,
+                         cups_option_t **out)
+{
+    cups_option_t *options = NULL;
+    int num_options = 0;
+    GVariantIter *iter;
+    char *option_name = NULL;
+    char *option_value = NULL;
+    gboolean more = FALSE;
+    int i;
+
+    if (num_settings <= 0)
+    {
+        *out = NULL;
+        return 0;
+    }
+
+    g_variant_get(settings, "a(ss)", &iter);
+    for (i = 0; i < num_settings; i++)
+    {
+        more = g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
+        if (!more)
+            break;
+        logdebug(" %s : %s\n", option_name, option_value);
+        num_options = cupsAddOption(option_name, option_value, num_options, &options);
+    }
+    if (more)
+    {
+        g_free(option_name);
+        g_free(option_value);
+    }
+    g_variant_iter_free(iter);
+    *out = options;
+    return num_options;
+}
+
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
                   char *job_id_str, char *socket_path, const char *title,
                   char *error_msg, int error_msg_len, BackendObj *b)
 {
     ensure_dest_info(p);
-    int num_options = 0;
-    cups_option_t *options;
+    cups_option_t *options = NULL;
     error_msg[0] = '\0';
-    GVariantIter *iter;
-    g_variant_get(settings, "a(ss)", &iter);
-
-    int i = 0;
-    char *option_name, *option_value;
-    for (i = 0; i < num_settings; i++)
-    {
-        g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
-        logdebug(" %s : %s\n", option_name, option_value);
-
-        /**
-         * to do:
-         * instead of directly adding the option,convert it from the frontend's lingo 
-         * to the specific lingo of the backend
-         * 
-         * use PWG names instead
-         */
-        num_options = cupsAddOption(option_name, option_value, num_options, &options);
-    }
+    int num_options = settings_to_cups_options(settings, num_settings, &options);
    
    
     // Prepare the socket connection
@@ -2060,22 +2078,10 @@ void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
               char *error_msg, int error_msg_len, BackendObj *b)
 {
     ensure_dest_info(p);
-    int num_options = 0;
     cups_option_t *options = NULL;
     error_msg[0] = '\0';
     *peer_fd = -1;
-
-    GVariantIter *iter;
-    g_variant_get(settings, "a(ss)", &iter);
-
-    char *option_name, *option_value;
-    for (int i = 0; i < num_settings; i++)
-    {
-        g_variant_iter_loop(iter, "(ss)", &option_name, &option_value);
-        logdebug(" %s : %s\n", option_name, option_value);
-        num_options = cupsAddOption(option_name, option_value,
-                                    num_options, &options);
-    }
+    int num_options = settings_to_cups_options(settings, num_settings, &options);
 
     /* Create the CUPS job to obtain a job ID */
     int job_id = 0;
