@@ -49,7 +49,7 @@ TESTS = \
 TESTS_ENVIRONMENT = CUPS_SBINDIR="$(CUPS_SBINDIR)"
 
 # Unit test program
-check_PROGRAMS = test_extractHostFromURI test_settings_options test_missing_dialog
+check_PROGRAMS = test_extractHostFromURI test_settings_options test_missing_dialog test_ppd_options
 test_extractHostFromURI_SOURCES = \
 	test_extractHostFromURI.c \
 	backend_helper.c backend_helper.h cups-compat.h
@@ -67,6 +67,12 @@ test_missing_dialog_SOURCES = \
 	backend_helper.c backend_helper.h cups-compat.h
 test_missing_dialog_CPPFLAGS = $(CPDB_CFLAGS) $(CUPS_CFLAGS) $(LIBCUPSFILTERS_CFLAGS) $(GLIB_CFLAGS) $(GIO_CFLAGS) $(GIOUNIX_CFLAGS)
 test_missing_dialog_LDADD = $(CPDB_LIBS) $(GLIB_LIBS) $(GIO_LIBS) $(GIOUNIX_LIBS) $(CUPS_LIBS) $(LIBCUPSFILTERS_LIBS)
+
+# Integration test for the vendor PPD options.  It needs the backend of
+# the test bed, so run-tests.sh runs it while the backend is running.
+test_ppd_options_SOURCES = test_ppd_options.c
+test_ppd_options_CPPFLAGS = $(GIO_CFLAGS) $(GLIB_CFLAGS)
+test_ppd_options_LDADD = $(GLIB_LIBS) $(GIO_LIBS)
 
 EXTRA_DIST = \
         run-tests.sh \
