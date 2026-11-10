@@ -9,8 +9,12 @@
 #include <arpa/inet.h>
 #include <cupsfilters/ipp.h>
 
-#define MAX_ADDRESSES 10 
+#define MAX_ADDRESSES 10
 #define _CUPS_NO_DEPRECATED 1
+
+#if CUPS_VERSION_MAJOR < 3
+static ppd_file_t *ensure_ppd (PrinterCUPS *p);
+#endif
 
 static http_t *system_conn = NULL;
 static unsigned int HttpLocalTimeout = 5;
@@ -891,6 +895,63 @@ GVariant *pack_capability(const Capability *cap)
     g_free(t);
     return tuple_variant;
 }
+
+#if CUPS_VERSION_MAJOR < 3
+/*
+ * Transitional PPD fallback for driver-based (non-IPP) queues.
+ *
+ * CUPS 3.x is driverless: legacy PPD handling belongs in Printer
+ * Applications (PAPPL / pappl-retrofit), not in new unguarded PPD code.
+ * This block is therefore compiled out on CUPS >= 3.
+ *
+ * CUPS 2.x never reports the vendor PPD keywords of a driver-based queue
+ * (ColorModel, InputSlot, ...) as IPP attributes, so a client that only
+ * uses destination info cannot see them.  We ask CUPS itself to fetch the
+ * queue's PPD over IPP (cupsGetPPD2 -- CUPS-Get-PPD) instead of looking
+ * for the file on disk: with sandboxed packaging (Flatpak, Snap, OCI
+ * containers, immutable distros) the backend and CUPS can live in
+ * different sandboxes and only IPP communication crosses them.  The
+ * downloaded temporary file is parsed and localized by libcups itself
+ * (ppdOpenFile + ppdLocalize), which resolves both the original Adobe
+ * "keyword/Human Text" strings and CUPS' multi-language PPD extension
+ * into the current UI language -- nothing is hand-parsed here.
+ */
+
+/*
+ * Fetch, parse and localize the queue's PPD once per printer and cache
+ * it in the PrinterCUPS struct.  Returns NULL when the queue has no PPD
+ * (e.g. driverless queues) or CUPS cannot serve/parse one.
+ */
+static ppd_file_t *
+ensure_ppd (PrinterCUPS *p)
+{
+    if (p->ppd)
+        return p->ppd;
+
+    /* CUPS downloads the PPD over IPP into a temporary file. */
+    const char *path = cupsGetPPD2 (CUPS_HTTP_DEFAULT, p->name);
+    if (!path)
+    {
+        logdebug ("No PPD available for printer %s (driverless queue?)\n",
+                  p->name);
+        return NULL;
+    }
+
+    ppd_file_t *ppd = ppdOpenFile (path);
+    unlink (path);
+    if (!ppd)
+    {
+        logwarn ("Could not parse PPD for printer %s: %s\n",
+                 p->name, ppdErrorString (ppdLastError (NULL)));
+        return NULL;
+    }
+
+    /* Resolve human-readable strings for the current UI language. */
+    ppdLocalize (ppd);
+    p->ppd = ppd;
+    return ppd;
+}
+#endif /* CUPS_VERSION_MAJOR < 3 */
 
 int get_all_options(PrinterCUPS *p, Option **options)
 {
