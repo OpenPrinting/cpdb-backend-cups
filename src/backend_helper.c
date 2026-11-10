@@ -951,6 +951,127 @@ ensure_ppd (PrinterCUPS *p)
     p->ppd = ppd;
     return ppd;
 }
+/*
+ * A vendor PPD option that is to be exposed to the frontend.
+ */
+typedef struct
+{
+    char  *keyword;    /* PPD keyword, used as the CPDB option name */
+    char  *defchoice;  /* Default choice */
+    int    num_choices;
+    char **choices;    /* Computer-readable choice names */
+} ppd_option_add_t;
+
+/*
+ * Collect the PPD (vendor) options of the queue.  The option name keeps
+ * the PPD keyword so it round-trips as a CUPS job option (lp -o
+ * ColorModel=...); display strings are served from the localized
+ * o->text / choice->text by the translation getters.
+ *
+ * The result is a copy of the PPD data: the caller may release the IPP
+ * option names it passed in afterwards.
+ *
+ * Returns a newly allocated array (free with free_ppd_options()) and sets
+ * *num to the number of entries.
+ */
+static ppd_option_add_t *
+collect_ppd_options (PrinterCUPS  *p,
+                     const char   **ipp_names,
+                     int           ipp_count,
+                     int          *num)
+{
+    *num = 0;
+
+    ppd_file_t *ppd = ensure_ppd (p);
+    if (!ppd)
+        return NULL;
+
+    int count = 0;
+    ppd_option_t *o = ppdFirstOption (ppd);
+    while (o)
+    {
+        if (o->num_choices > 0)
+            count++;
+        o = ppdNextOption (ppd);
+    }
+
+    if (!count)
+        return NULL;
+
+    ppd_option_add_t *list = (ppd_option_add_t *)calloc (count,
+                                                         sizeof (ppd_option_add_t));
+    if (!list)
+        return NULL;
+
+    int i = 0;
+    o = ppdFirstOption (ppd);
+    while (o)
+    {
+        if (o->num_choices > 0)
+        {
+            list[i].keyword       = g_strdup (o->keyword);
+            list[i].defchoice     = g_strdup (o->defchoice);
+            list[i].num_choices   = o->num_choices;
+            list[i].choices       = cpdbNewCStringArray (o->num_choices);
+            for (int j = 0; j < o->num_choices; j++)
+                list[i].choices[j] = g_strdup (o->choices[j].choice);
+            i++;
+        }
+        o = ppdNextOption (ppd);
+    }
+
+    *num = count;
+    return list;
+}
+
+/*
+ * Release a list of PPD options collected by collect_ppd_options().
+ */
+static void
+free_ppd_options (ppd_option_add_t *list,
+                  int               num)
+{
+    if (!list)
+        return;
+
+    for (int i = 0; i < num; i++)
+    {
+        g_free (list[i].keyword);
+        g_free (list[i].defchoice);
+        for (int j = 0; j < list[i].num_choices; j++)
+            g_free (list[i].choices[j]);
+        g_free (list[i].choices);
+    }
+
+    free (list);
+}
+
+/*
+ * Append the collected PPD (vendor) options to the option array.
+ *
+ * Returns the updated optsIndex.
+ */
+static int
+add_ppd_options (Option             *opts,
+                 int                 optsIndex,
+                 const ppd_option_add_t *ppd_opts,
+                 int                 ppd_count)
+{
+    for (int i = 0; i < ppd_count; i++)
+    {
+        opts[optsIndex].option_name = g_strdup (ppd_opts[i].keyword);
+        opts[optsIndex].default_value = g_strdup (ppd_opts[i].defchoice);
+        opts[optsIndex].num_supported = ppd_opts[i].num_choices;
+        opts[optsIndex].supported_values =
+            cpdbNewCStringArray (opts[optsIndex].num_supported);
+        for (int j = 0; j < opts[optsIndex].num_supported; j++)
+            opts[optsIndex].supported_values[j] =
+                g_strdup (ppd_opts[i].choices[j]);
+        optsIndex++;
+    }
+
+    return optsIndex;
+}
 #endif /* CUPS_VERSION_MAJOR < 3 */
 
 int get_all_options(PrinterCUPS *p, Option **options)
@@ -978,7 +1099,20 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
-    Option *opts = (Option *)(calloc(num_options+20, sizeof(Option))); /**Option array, which will be filled **/
+#if CUPS_VERSION_MAJOR < 3
+    /* Collect the vendor PPD options up front: the IPP option names are
+     * released further down (the hardcoded ones), so the redundancy check
+     * has to run while they are still valid. */
+    ppd_option_add_t *ppd_opts = NULL;
+    int ppd_count = 0;
+    ppd_opts = collect_ppd_options (p, (const char **) option_names,
+                                    num_options, &ppd_count);
+#else
+    ppd_option_add_t *ppd_opts = NULL;
+    int ppd_count = 0;
+#endif
+
+    Option *opts = (Option *)(calloc(num_options + 20 + ppd_count, sizeof(Option))); /**Option array, which will be filled **/
     ipp_attribute_t *vals;                                                /** Variable to store the values of the options **/
     
 
@@ -1034,6 +1168,13 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
         optsIndex++;
     }
+
+#if CUPS_VERSION_MAJOR < 3
+    /* Expose vendor PPD options not already covered by IPP /
+     * destination-info (driver-based / non-IPP queues). */
+    optsIndex = add_ppd_options (opts, optsIndex, ppd_opts, ppd_count);
+    free_ppd_options (ppd_opts, ppd_count);
+#endif /* CUPS_VERSION_MAJOR < 3 */
 
     /* Add the booklet option */
     opts[optsIndex].option_name = g_strdup("booklet");
