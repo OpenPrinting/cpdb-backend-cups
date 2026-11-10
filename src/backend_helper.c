@@ -612,6 +612,7 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
     p->stream_socket_path = NULL;
 #if CUPS_VERSION_MAJOR < 3
     p->ppd = NULL;
+    p->ppd_tried = FALSE;
 #endif
 
     return p;
@@ -626,6 +627,13 @@ void free_PrinterCUPS(PrinterCUPS *p)
     {
         cupsFreeDestInfo(p->dinfo);
     }
+#if CUPS_VERSION_MAJOR < 3
+    if (p->ppd)
+    {
+        ppdClose(p->ppd);
+        p->ppd = NULL;
+    }
+#endif
 }
 
 gboolean ensure_dest_info(PrinterCUPS *p)
@@ -926,13 +934,16 @@ GVariant *pack_capability(const Capability *cap)
  * downloaded temporary file is parsed and localized by libcups itself
  * (ppdOpenFile + ppdLocalize), which resolves both the original Adobe
  * "keyword/Human Text" strings and CUPS' multi-language PPD extension
- * into the current UI language -- nothing is hand-parsed here.
+ * into the language of the daemon -- nothing is hand-parsed here.
  */
 
 /*
  * Fetch, parse and localize the queue's PPD once per printer and cache
  * it in the PrinterCUPS struct.  Returns NULL when the queue has no PPD
  * (e.g. driverless queues) or CUPS cannot serve/parse one.
+ *
+ * A queue without a PPD is remembered as well, so that the PPD is
+ * looked up once per printer and not once per option.
  */
 static ppd_file_t *
 ensure_ppd (PrinterCUPS *p)
@@ -940,8 +951,25 @@ ensure_ppd (PrinterCUPS *p)
     if (p->ppd)
         return p->ppd;
 
+    if (p->ppd_tried)
+        return NULL;
+
+    p->ppd_tried = TRUE;
+
+    /*
+     * The name of a destination is "queue/instance" when it points to an
+     * instance of a queue, but the PPD of a queue is named after the
+     * queue itself.
+     */
+    char *queue = g_strdup (p->name);
+    char *slash = strchr (queue, '/');
+    if (slash)
+        *slash = '\0';
+
     /* CUPS downloads the PPD over IPP into a temporary file. */
-    const char *path = cupsGetPPD2 (CUPS_HTTP_DEFAULT, p->name);
+    const char *path = cupsGetPPD2 (CUPS_HTTP_DEFAULT, queue);
+    g_free (queue);
+
     if (!path)
     {
         logdebug ("No PPD available for printer %s (driverless queue?)\n",
@@ -958,71 +986,68 @@ ensure_ppd (PrinterCUPS *p)
         return NULL;
     }
 
-    /* Resolve human-readable strings for the current UI language. */
+    /* Resolve the human-readable strings for the language of the daemon. */
     ppdLocalize (ppd);
     p->ppd = ppd;
     return ppd;
 }
 /*
- * PPD keywords whose information already reaches the frontend through
- * their IPP counterpart.  ppdFirstOption()/ppdNextOption() only iterate
- * OpenUI options, so UI-less keywords (ImageableArea, Default*,
- * cupsFilter, ...) never show up here; the mapping prevents the
- * open-source (RiverStrategyPPD) keywords from being offered twice.
- */
-static const struct
-{
-    const char *ppd_keyword;
-    const char *ipp_name;
-} ppd_ipp_counterparts[] =
-{
-    { "PageSize",         "media" },
-    { "PageRegion",       "media" },
-    { "InputSlot",        "media-source" },
-    { "MediaType",        "media-type" },
-    { "Duplex",           "sides" },
-    { "ColorModel",       "print-color-mode" },
-    { "Resolution",       "printer-resolution" },
-    { "OutputBin",        "output-bin" },
-    { "cupsPrintQuality", "print-quality" },
-};
-
-/*
- * TRUE when the PPD keyword duplicates information the frontend already
- * receives through its IPP counterpart, i.e. the counterpart IPP
- * attribute is among the requested attributes.
+ * TRUE when the option belongs to the "InstallableOptions" group of the
+ * PPD.  Those options configure the queue itself, they are not job
+ * options, so they are not offered to the user.
  */
 static gboolean
-ppd_option_redundant (ppd_option_t *o,
-                      const char   **ipp_names,
-                      int           ipp_count)
+ppd_option_is_installable (ppd_file_t *ppd,
+                           ppd_option_t *o)
 {
-    const char *counterpart = NULL;
+    for (int g = 0; g < ppd->num_groups; g++)
+    {
+        if (strcmp (ppd->groups[g].name, "InstallableOptions") != 0)
+            continue;
 
-    for (size_t i = 0; i < G_N_ELEMENTS (ppd_ipp_counterparts); i++)
-        if (strcmp (o->keyword, ppd_ipp_counterparts[i].ppd_keyword) == 0)
-        {
-            counterpart = ppd_ipp_counterparts[i].ipp_name;
-            break;
-        }
+        for (int i = 0; i < ppd->groups[g].num_options; i++)
+            if (&ppd->groups[g].options[i] == o)
+                return TRUE;
+    }
 
-    if (!counterpart)
+    return FALSE;
+}
+
+/*
+ * TRUE when the PPD option is to be offered to the frontend.
+ *
+ * ppdFirstOption()/ppdNextOption() only iterate OpenUI options, so
+ * UI-less keywords (ImageableArea, Default*, cupsFilter, ...) never show
+ * up here.
+ */
+static gboolean
+ppd_option_exposable (ppd_file_t *ppd,
+                      ppd_option_t *o)
+{
+    /* No choices at all: nothing to choose from. */
+    if (o->num_choices <= 0)
         return FALSE;
 
     /*
-     * "media" itself never becomes a generic option: paper sizes reach
-     * the frontend through the CPDB Media tab, and get_all_options()
-     * hardcodes its handling anyway.  Their PPD counterparts must go
-     * away even when CUPS omits "media" from job-creation-attributes.
+     * PickMany options hold more than one value, which the single
+     * valued option list of the frontend cannot express.
      */
-    if (strcmp (counterpart, "media") == 0)
-        return TRUE;
+    if (o->ui == PPD_UI_PICKMANY)
+        return FALSE;
 
-    for (int i = 0; i < ipp_count; i++)
-        if (strcmp (ipp_names[i], counterpart) == 0)
-            return TRUE;
+    /*
+     * The paper size is owned by the media tab of the frontend, so the
+     * PPD counterparts are not offered a second time.
+     */
+    if (strcmp (o->keyword, "PageSize") == 0 ||
+        strcmp (o->keyword, "PageRegion") == 0)
+        return FALSE;
 
-    return FALSE;
+    /* Queue configuration, not a job option. */
+    if (ppd_option_is_installable (ppd, o))
+        return FALSE;
+
+    return TRUE;
 }
 
 /*
@@ -1050,8 +1075,6 @@ typedef struct
  */
 static ppd_option_add_t *
 collect_ppd_options (PrinterCUPS  *p,
-                     const char   **ipp_names,
-                     int           ipp_count,
                      int          *num)
 {
     *num = 0;
@@ -1064,7 +1087,7 @@ collect_ppd_options (PrinterCUPS  *p,
     ppd_option_t *o = ppdFirstOption (ppd);
     while (o)
     {
-        if (o->num_choices > 0 && !ppd_option_redundant (o, ipp_names, ipp_count))
+        if (ppd_option_exposable (ppd, o))
             count++;
         o = ppdNextOption (ppd);
     }
@@ -1081,7 +1104,7 @@ collect_ppd_options (PrinterCUPS  *p,
     o = ppdFirstOption (ppd);
     while (o)
     {
-        if (o->num_choices > 0 && !ppd_option_redundant (o, ipp_names, ipp_count))
+        if (ppd_option_exposable (ppd, o))
         {
             list[i].keyword       = g_strdup (o->keyword);
             list[i].defchoice     = g_strdup (o->defchoice);
@@ -1141,6 +1164,18 @@ add_ppd_options (Option             *opts,
         for (int j = 0; j < opts[optsIndex].num_supported; j++)
             opts[optsIndex].supported_values[j] =
                 g_strdup (ppd_opts[i].choices[j]);
+
+        /*
+         * A PPD option without a default choice gets the first supported
+         * choice, an empty default is of no use to the user.
+         */
+        if (opts[optsIndex].default_value[0] == '\0')
+        {
+            g_free (opts[optsIndex].default_value);
+            opts[optsIndex].default_value =
+                g_strdup (opts[optsIndex].supported_values[0]);
+        }
+
         optsIndex++;
     }
 
@@ -1174,13 +1209,10 @@ int get_all_options(PrinterCUPS *p, Option **options)
     int i, j, optsIndex = 0;                                         /**Looping variables **/
 
 #if CUPS_VERSION_MAJOR < 3
-    /* Collect the vendor PPD options up front: the IPP option names are
-     * released further down (the hardcoded ones), so the redundancy check
-     * has to run while they are still valid. */
+    /* Collect the vendor PPD options of the queue. */
     ppd_option_add_t *ppd_opts = NULL;
     int ppd_count = 0;
-    ppd_opts = collect_ppd_options (p, (const char **) option_names,
-                                    num_options, &ppd_count);
+    ppd_opts = collect_ppd_options (p, &ppd_count);
 #else
     int ppd_count = 0;
 #endif
@@ -1220,6 +1252,16 @@ int get_all_options(PrinterCUPS *p, Option **options)
             opts[optsIndex].num_supported = ippGetCount(vals);
         else
             opts[optsIndex].num_supported = 0;
+
+        /*
+         * An option without any value is of no use to the user, so it is
+         * not offered at all.
+         */
+        if (opts[optsIndex].num_supported == 0)
+        {
+            g_free(opts[optsIndex].option_name);
+            continue;
+        }
 
         /** Retreive all the supported values for that option **/
         opts[optsIndex].supported_values = cpdbNewCStringArray(opts[optsIndex].num_supported);
@@ -3057,8 +3099,10 @@ char *get_option_translation(PrinterCUPS *p,
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
 
+    ensure_dest_info(p);
+
 #if CUPS_VERSION_MAJOR < 3
-    /* Vendor PPD options on driver-based queues: serve the CUPS-localized
+    /* Vendor PPD options on driver-based queues: serve the localized
      * text from the (cached) PPD without any IPP round trips. The PPD
      * keyword is not known to the IPP translation catalogs. */
     {
@@ -3069,7 +3113,6 @@ char *get_option_translation(PrinterCUPS *p,
     }
 #endif
 
-    ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     uri = cupsGetOption("printer-uri-supported", 
                         p->dest->num_options,
@@ -3117,8 +3160,10 @@ char *get_choice_translation(PrinterCUPS *p,
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
 
+    ensure_dest_info(p);
+
 #if CUPS_VERSION_MAJOR < 3
-    /* Vendor PPD options on driver-based queues: serve the CUPS-localized
+    /* Vendor PPD options on driver-based queues: serve the localized
      * text from the (cached) PPD without any IPP round trips. */
     {
         ppd_file_t *ppd = ensure_ppd (p);
@@ -3129,7 +3174,6 @@ char *get_choice_translation(PrinterCUPS *p,
     }
 #endif
 
-    ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     uri = cupsGetOption("printer-uri-supported", 
                         p->dest->num_options,

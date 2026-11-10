@@ -1,5 +1,6 @@
 #include <stdio.h>
 #include <stdlib.h>
+#include <locale.h>
 #include <glib.h>
 #include <string.h>
 #include <gio/gunixfdlist.h>
@@ -121,6 +122,14 @@ on_printer_deleted (CupsNotifier *object,
 
 int main()
 {
+    /*
+     * Use the locale of the environment for the messages of the CUPS
+     * library, so that the human-readable strings of a PPD (which are
+     * localized by the CUPS library itself) are shown in the language of
+     * the user the backend runs for.
+     */
+    setlocale(LC_MESSAGES, "");
+
     /* Initialize internal default settings of the CUPS library */
     (void)ippPort();
 
