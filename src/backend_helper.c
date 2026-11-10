@@ -731,6 +731,18 @@ char *get_default(PrinterCUPS *p, char *option_name)
     {
         return extract_ipp_attribute(def_attr, 0, option_name);
     }
+
+#if CUPS_VERSION_MAJOR < 3
+    /* Driver-based queues: vendor PPD keywords are not known to CUPS'
+     * IPP layer, their defaults come from the (cached, localized) PPD. */
+    {
+        ppd_file_t *ppd = ensure_ppd (p);
+        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
+        if (po && po->defchoice[0])
+            return g_strdup (po->defchoice);
+    }
+#endif
+
     return g_strdup("NA");
 }
 /**************Option************************************/
