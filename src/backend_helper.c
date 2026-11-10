@@ -952,6 +952,68 @@ ensure_ppd (PrinterCUPS *p)
     return ppd;
 }
 /*
+ * PPD keywords whose information already reaches the frontend through
+ * their IPP counterpart.  ppdFirstOption()/ppdNextOption() only iterate
+ * OpenUI options, so UI-less keywords (ImageableArea, Default*,
+ * cupsFilter, ...) never show up here; the mapping prevents the
+ * open-source (RiverStrategyPPD) keywords from being offered twice.
+ */
+static const struct
+{
+    const char *ppd_keyword;
+    const char *ipp_name;
+} ppd_ipp_counterparts[] =
+{
+    { "PageSize",         "media" },
+    { "PageRegion",       "media" },
+    { "InputSlot",        "media-source" },
+    { "MediaType",        "media-type" },
+    { "Duplex",           "sides" },
+    { "ColorModel",       "print-color-mode" },
+    { "Resolution",       "printer-resolution" },
+    { "OutputBin",        "output-bin" },
+    { "cupsPrintQuality", "print-quality" },
+};
+
+/*
+ * TRUE when the PPD keyword duplicates information the frontend already
+ * receives through its IPP counterpart, i.e. the counterpart IPP
+ * attribute is among the requested attributes.
+ */
+static gboolean
+ppd_option_redundant (ppd_option_t *o,
+                      const char   **ipp_names,
+                      int           ipp_count)
+{
+    const char *counterpart = NULL;
+
+    for (size_t i = 0; i < G_N_ELEMENTS (ppd_ipp_counterparts); i++)
+        if (strcmp (o->keyword, ppd_ipp_counterparts[i].ppd_keyword) == 0)
+        {
+            counterpart = ppd_ipp_counterparts[i].ipp_name;
+            break;
+        }
+
+    if (!counterpart)
+        return FALSE;
+
+    /*
+     * "media" itself never becomes a generic option: paper sizes reach
+     * the frontend through the CPDB Media tab, and get_all_options()
+     * hardcodes its handling anyway.  Their PPD counterparts must go
+     * away even when CUPS omits "media" from job-creation-attributes.
+     */
+    if (strcmp (counterpart, "media") == 0)
+        return TRUE;
+
+    for (int i = 0; i < ipp_count; i++)
+        if (strcmp (ipp_names[i], counterpart) == 0)
+            return TRUE;
+
+    return FALSE;
+}
+
+/*
  * A vendor PPD option that is to be exposed to the frontend.
  */
 typedef struct
@@ -990,7 +1052,7 @@ collect_ppd_options (PrinterCUPS  *p,
     ppd_option_t *o = ppdFirstOption (ppd);
     while (o)
     {
-        if (o->num_choices > 0)
+        if (o->num_choices > 0 && !ppd_option_redundant (o, ipp_names, ipp_count))
             count++;
         o = ppdNextOption (ppd);
     }
@@ -1007,7 +1069,7 @@ collect_ppd_options (PrinterCUPS  *p,
     o = ppdFirstOption (ppd);
     while (o)
     {
-        if (o->num_choices > 0)
+        if (o->num_choices > 0 && !ppd_option_redundant (o, ipp_names, ipp_count))
         {
             list[i].keyword       = g_strdup (o->keyword);
             list[i].defchoice     = g_strdup (o->defchoice);
