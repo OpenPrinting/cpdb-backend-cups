@@ -3058,6 +3058,18 @@ char *get_option_translation(PrinterCUPS *p,
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
 
+#if CUPS_VERSION_MAJOR < 3
+    /* Vendor PPD options on driver-based queues: serve the CUPS-localized
+     * text from the (cached) PPD without any IPP round trips. The PPD
+     * keyword is not known to the IPP translation catalogs. */
+    {
+        ppd_file_t *ppd = ensure_ppd (p);
+        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
+        if (po && po->text[0])
+            return g_strdup (po->text);
+    }
+#endif
+
     ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
     uri = cupsGetOption("printer-uri-supported", 
@@ -3105,6 +3117,18 @@ char *get_choice_translation(PrinterCUPS *p,
     ipp_attribute_t *attr;
     ipp_t *request, *response;
     cups_array_t *opts_catalog, *printer_opts_catalog;
+
+#if CUPS_VERSION_MAJOR < 3
+    /* Vendor PPD options on driver-based queues: serve the CUPS-localized
+     * text from the (cached) PPD without any IPP round trips. */
+    {
+        ppd_file_t *ppd = ensure_ppd (p);
+        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
+        ppd_choice_t *pc = po ? ppdFindChoice (po, choice_name) : NULL;
+        if (pc && pc->text[0])
+            return g_strdup (pc->text);
+    }
+#endif
 
     ensure_dest_info(p);
     request = ippNewRequest(IPP_OP_GET_PRINTER_ATTRIBUTES);
