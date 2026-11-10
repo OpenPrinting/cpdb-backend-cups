@@ -1199,7 +1199,7 @@ int get_all_options(PrinterCUPS *p, Option **options)
     if (!tmp_names) {
         for (int k = 0; k < num_options; k++) g_free(option_names[k]);
         free(option_names);
-        return NULL;
+        return 0;
     }
     option_names = tmp_names;
     for (int i=0; i<sz; i++) 
@@ -1662,6 +1662,12 @@ static CapabilityType cpdb_capability_type_from_ipp(ipp_attribute_t *attr,
  * the type gets flattened into a string. Then drops single-choice entries
  * unless they're on the hardcoded exception list, per the CUPS backend's
  * own filtering responsibility (nothing changes in GetAllOptions/Option).
+ *
+ * The capabilities describe the options of the IPP layer only.  The vendor
+ * options of a PPD are not part of them: they are not IPP attributes, so
+ * they have no type, no range and no IPP default.  The option list of
+ * GetAllOptions() carries them (with the choices and the human-readable
+ * text of the PPD), which is what the print dialog of the frontend uses.
  */
 int get_all_capabilities(PrinterCUPS *p, Capability **caps,
                          const char *locale)
@@ -1677,7 +1683,7 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
     if (!tmp_names) {
         for (int k = 0; k < num_options; k++) g_free(option_names[k]);
         free(option_names);
-        return NULL;
+        return 0;
     }
     option_names = tmp_names;
     for (int i = 0; i < sz; i++)
