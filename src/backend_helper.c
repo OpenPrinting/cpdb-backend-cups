@@ -1182,7 +1182,6 @@ int get_all_options(PrinterCUPS *p, Option **options)
     ppd_opts = collect_ppd_options (p, (const char **) option_names,
                                     num_options, &ppd_count);
 #else
-    ppd_option_add_t *ppd_opts = NULL;
     int ppd_count = 0;
 #endif
 
