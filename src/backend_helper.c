@@ -606,6 +606,9 @@ PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
     p->name = get_printer_name_for_cups_dest(dest_copy);
     p->dinfo = NULL;
     p->stream_socket_path = NULL;
+#if CUPS_VERSION_MAJOR < 3
+    p->ppd = NULL;
+#endif
 
     return p;
 }
