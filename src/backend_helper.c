@@ -1735,6 +1735,43 @@ add_ppd_options(PrinterCUPS *p,
     return optsIndex;
 }
 
+/*
+ * Add a job option for a setting of the frontend. When the option and
+ * the choice exist both as an IPP attribute and as a PPD option, both
+ * are sent to CUPS, so that the driver gets exactly what the user saw.
+ * A PPD-only choice is sent as PPD keyword only.
+ */
+static int
+add_ipp_and_ppd_option(PrinterCUPS *p,
+                       const char *name,
+                       const char *value,
+                       int num_options,
+                       cups_option_t **options)
+{
+    ppd_option_t *po = ppd_option_for_ipp(ensure_ppd(p), name);
+
+    if (po)
+    {
+        ppd_choice_t *pc = ppd_choice_for_ipp(name, po, value);
+
+        if (pc)
+        {
+            char *mapped = ipp_value_from_ppd_choice(name, po, pc->choice);
+            gboolean in_both = mapped &&
+                               !g_ascii_strcasecmp(mapped, value);
+            g_free(mapped);
+
+            if (in_both)
+                num_options = cupsAddOption(name, value, num_options,
+                                            options);
+
+            return cupsAddOption(po->keyword, pc->choice, num_options,
+                                 options);
+        }
+    }
+
+    return cupsAddOption(name, value, num_options, options);
+}
 #endif /* CUPS_VERSION_MAJOR < 3 */
 
 int get_all_options(PrinterCUPS *p, Option **options)
@@ -2805,7 +2842,7 @@ void backend_obj_wait_for_print_threads(BackendObj *b)
 
 
 int
-settings_to_cups_options(GVariant *settings, int num_settings,
+settings_to_cups_options(PrinterCUPS *p, GVariant *settings, int num_settings,
                          cups_option_t **out)
 {
     cups_option_t *options = NULL;
@@ -2829,7 +2866,13 @@ settings_to_cups_options(GVariant *settings, int num_settings,
         if (!more)
             break;
         logdebug(" %s : %s\n", option_name, option_value);
-        num_options = cupsAddOption(option_name, option_value, num_options, &options);
+#if CUPS_VERSION_MAJOR < 3
+        if (p)
+            num_options = add_ipp_and_ppd_option(p, option_name, option_value,
+                                                 num_options, &options);
+        else
+#endif
+            num_options = cupsAddOption(option_name, option_value, num_options, &options);
     }
     if (more)
     {
@@ -2848,7 +2891,7 @@ void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
     ensure_dest_info(p);
     cups_option_t *options = NULL;
     error_msg[0] = '\0';
-    int num_options = settings_to_cups_options(settings, num_settings, &options);
+    int num_options = settings_to_cups_options(p, settings, num_settings, &options);
    
    
     // Prepare the socket connection
@@ -2961,7 +3004,7 @@ void print_fd(PrinterCUPS *p, int num_settings, GVariant *settings,
     cups_option_t *options = NULL;
     error_msg[0] = '\0';
     *peer_fd = -1;
-    int num_options = settings_to_cups_options(settings, num_settings, &options);
+    int num_options = settings_to_cups_options(p, settings, num_settings, &options);
 
     /* Create the CUPS job to obtain a job ID */
     int job_id = 0;

@@ -310,7 +310,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 int get_all_capabilities(PrinterCUPS *p, Capability **caps,
                          const char *locale);
 
-int settings_to_cups_options(GVariant *settings, int num_settings,
+int settings_to_cups_options(PrinterCUPS *p, GVariant *settings, int num_settings,
                              cups_option_t **options);
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,
