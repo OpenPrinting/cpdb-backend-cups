@@ -13,7 +13,7 @@
 #define _CUPS_NO_DEPRECATED 1
 
 #if CUPS_VERSION_MAJOR < 3
-static ppd_file_t *ensure_ppd (PrinterCUPS *p);
+static ppd_file_t *ensure_ppd(PrinterCUPS *p);
 #endif
 
 static http_t *system_conn = NULL;
@@ -744,10 +744,10 @@ char *get_default(PrinterCUPS *p, char *option_name)
     /* Driver-based queues: vendor PPD keywords are not known to CUPS'
      * IPP layer, their defaults come from the (cached, localized) PPD. */
     {
-        ppd_file_t *ppd = ensure_ppd (p);
-        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
+        ppd_file_t *ppd = ensure_ppd(p);
+        ppd_option_t *po = ppd ? ppdFindOption(ppd, option_name) : NULL;
         if (po && po->defchoice[0])
-            return g_strdup (po->defchoice);
+            return g_strdup(po->defchoice);
     }
 #endif
 
@@ -926,11 +926,11 @@ GVariant *pack_capability(const Capability *cap)
  *
  * CUPS 2.x never reports the vendor PPD keywords of a driver-based queue
  * (ColorModel, InputSlot, ...) as IPP attributes, so a client that only
- * uses destination info cannot see them.  We ask CUPS itself to fetch the
+ * uses destination info cannot see them. We ask CUPS itself to fetch the
  * queue's PPD over IPP (cupsGetPPD2 -- CUPS-Get-PPD) instead of looking
  * for the file on disk: with sandboxed packaging (Flatpak, Snap, OCI
  * containers, immutable distros) the backend and CUPS can live in
- * different sandboxes and only IPP communication crosses them.  The
+ * different sandboxes and only IPP communication crosses them. The
  * downloaded temporary file is parsed and localized by libcups itself
  * (ppdOpenFile + ppdLocalize), which resolves both the original Adobe
  * "keyword/Human Text" strings and CUPS' multi-language PPD extension
@@ -939,14 +939,14 @@ GVariant *pack_capability(const Capability *cap)
 
 /*
  * Fetch, parse and localize the queue's PPD once per printer and cache
- * it in the PrinterCUPS struct.  Returns NULL when the queue has no PPD
+ * it in the PrinterCUPS struct. Returns NULL when the queue has no PPD
  * (e.g. driverless queues) or CUPS cannot serve/parse one.
  *
  * A queue without a PPD is remembered as well, so that the PPD is
  * looked up once per printer and not once per option.
  */
 static ppd_file_t *
-ensure_ppd (PrinterCUPS *p)
+ensure_ppd(PrinterCUPS *p)
 {
     if (p->ppd)
         return p->ppd;
@@ -961,48 +961,48 @@ ensure_ppd (PrinterCUPS *p)
      * instance of a queue, but the PPD of a queue is named after the
      * queue itself.
      */
-    char *queue = g_strdup (p->name);
-    char *slash = strchr (queue, '/');
+    char *queue = g_strdup(p->name);
+    char *slash = strchr(queue, '/');
     if (slash)
         *slash = '\0';
 
     /* CUPS downloads the PPD over IPP into a temporary file. */
-    const char *path = cupsGetPPD2 (CUPS_HTTP_DEFAULT, queue);
-    g_free (queue);
+    const char *path = cupsGetPPD2(CUPS_HTTP_DEFAULT, queue);
+    g_free(queue);
 
     if (!path)
     {
-        logdebug ("No PPD available for printer %s (driverless queue?)\n",
-                  p->name);
+        logdebug("No PPD available for printer %s (driverless queue?)\n",
+                 p->name);
         return NULL;
     }
 
-    ppd_file_t *ppd = ppdOpenFile (path);
-    unlink (path);
+    ppd_file_t *ppd = ppdOpenFile(path);
+    unlink(path);
     if (!ppd)
     {
-        logwarn ("Could not parse PPD for printer %s: %s\n",
-                 p->name, ppdErrorString (ppdLastError (NULL)));
+        logwarn("Could not parse PPD for printer %s: %s\n",
+                p->name, ppdErrorString(ppdLastError(NULL)));
         return NULL;
     }
 
     /* Resolve the human-readable strings for the language of the daemon. */
-    ppdLocalize (ppd);
+    ppdLocalize(ppd);
     p->ppd = ppd;
     return ppd;
 }
 /*
  * TRUE when the option belongs to the "InstallableOptions" group of the
- * PPD.  Those options configure the queue itself, they are not job
+ * PPD. Those options configure the queue itself, they are not job
  * options, so they are not offered to the user.
  */
 static gboolean
-ppd_option_is_installable (ppd_file_t *ppd,
-                           ppd_option_t *o)
+ppd_option_is_installable(ppd_file_t *ppd,
+                          ppd_option_t *o)
 {
     for (int g = 0; g < ppd->num_groups; g++)
     {
-        if (strcmp (ppd->groups[g].name, "InstallableOptions") != 0)
+        if (strcmp(ppd->groups[g].name, "InstallableOptions") != 0)
             continue;
 
         for (int i = 0; i < ppd->groups[g].num_options; i++)
@@ -1021,8 +1021,8 @@ ppd_option_is_installable (ppd_file_t *ppd,
  * up here.
  */
 static gboolean
-ppd_option_exposable (ppd_file_t *ppd,
-                      ppd_option_t *o)
+ppd_option_exposable(ppd_file_t *ppd,
+                     ppd_option_t *o)
 {
     /* No choices at all: nothing to choose from. */
     if (o->num_choices <= 0)
@@ -1039,12 +1039,12 @@ ppd_option_exposable (ppd_file_t *ppd,
      * The paper size is owned by the media tab of the frontend, so the
      * PPD counterparts are not offered a second time.
      */
-    if (strcmp (o->keyword, "PageSize") == 0 ||
-        strcmp (o->keyword, "PageRegion") == 0)
+    if (strcmp(o->keyword, "PageSize") == 0 ||
+        strcmp(o->keyword, "PageRegion") == 0)
         return FALSE;
 
     /* Queue configuration, not a job option. */
-    if (ppd_option_is_installable (ppd, o))
+    if (ppd_option_is_installable(ppd, o))
         return FALSE;
 
     return TRUE;
@@ -1062,7 +1062,7 @@ typedef struct
 } ppd_option_add_t;
 
 /*
- * Collect the PPD (vendor) options of the queue.  The option name keeps
+ * Collect the PPD (vendor) options of the queue. The option name keeps
  * the PPD keyword so it round-trips as a CUPS job option (lp -o
  * ColorModel=...); display strings are served from the localized
  * o->text / choice->text by the translation getters.
@@ -1074,47 +1074,47 @@ typedef struct
  * *num to the number of entries.
  */
 static ppd_option_add_t *
-collect_ppd_options (PrinterCUPS  *p,
-                     int          *num)
+collect_ppd_options(PrinterCUPS *p,
+                    int *num)
 {
     *num = 0;
 
-    ppd_file_t *ppd = ensure_ppd (p);
+    ppd_file_t *ppd = ensure_ppd(p);
     if (!ppd)
         return NULL;
 
     int count = 0;
-    ppd_option_t *o = ppdFirstOption (ppd);
+    ppd_option_t *o = ppdFirstOption(ppd);
     while (o)
     {
-        if (ppd_option_exposable (ppd, o))
+        if (ppd_option_exposable(ppd, o))
             count++;
-        o = ppdNextOption (ppd);
+        o = ppdNextOption(ppd);
     }
 
     if (!count)
         return NULL;
 
-    ppd_option_add_t *list = (ppd_option_add_t *)calloc (count,
-                                                         sizeof (ppd_option_add_t));
+    ppd_option_add_t *list = (ppd_option_add_t *)calloc(count,
+                                                        sizeof(ppd_option_add_t));
     if (!list)
         return NULL;
 
     int i = 0;
-    o = ppdFirstOption (ppd);
+    o = ppdFirstOption(ppd);
     while (o)
     {
-        if (ppd_option_exposable (ppd, o))
+        if (ppd_option_exposable(ppd, o))
         {
-            list[i].keyword       = g_strdup (o->keyword);
-            list[i].defchoice     = g_strdup (o->defchoice);
+            list[i].keyword       = g_strdup(o->keyword);
+            list[i].defchoice     = g_strdup(o->defchoice);
             list[i].num_choices   = o->num_choices;
-            list[i].choices       = cpdbNewCStringArray (o->num_choices);
+            list[i].choices       = cpdbNewCStringArray(o->num_choices);
             for (int j = 0; j < o->num_choices; j++)
-                list[i].choices[j] = g_strdup (o->choices[j].choice);
+                list[i].choices[j] = g_strdup(o->choices[j].choice);
             i++;
         }
-        o = ppdNextOption (ppd);
+        o = ppdNextOption(ppd);
     }
 
     *num = count;
@@ -1125,45 +1125,597 @@ collect_ppd_options (PrinterCUPS  *p,
  * Release a list of PPD options collected by collect_ppd_options().
  */
 static void
-free_ppd_options (ppd_option_add_t *list,
-                  int               num)
+free_ppd_options(ppd_option_add_t *list,
+                 int num)
 {
     if (!list)
         return;
 
     for (int i = 0; i < num; i++)
     {
-        g_free (list[i].keyword);
-        g_free (list[i].defchoice);
+        g_free(list[i].keyword);
+        g_free(list[i].defchoice);
         for (int j = 0; j < list[i].num_choices; j++)
-            g_free (list[i].choices[j]);
-        g_free (list[i].choices);
+            g_free(list[i].choices[j]);
+        g_free(list[i].choices);
     }
 
-    free (list);
+    free(list);
+}
+
+/*
+ * Concepts that CUPS offers both as an IPP attribute and as a PPD
+ * keyword. The IPP name is what the frontend and the job options use,
+ * the PPD keyword is what CUPS still passes on to the driver.
+ *
+ * The order of the keywords matters: cupsd looks them up in this order,
+ * so the first keyword of an IPP name that the PPD actually has wins.
+ */
+typedef struct
+{
+    const char *ipp_name;
+    const char *ppd_keyword;
+} ipp_ppd_option_t;
+
+static const ipp_ppd_option_t ipp_ppd_options[] =
+{
+    { "media-source",       "InputSlot" },
+    { "media-source",       "HPPaperSource" },
+    { "media-type",         "MediaType" },
+    { "output-bin",         "OutputBin" },
+    { "sides",              "Duplex" },
+    { "sides",              "JCLDuplex" },
+    { "sides",              "EFDuplex" },
+    { "sides",              "EFDuplexing" },
+    { "sides",              "KD03Duplex" },
+    { "printer-resolution", "Resolution" },
+    { "printer-resolution", "JCLResolution" },
+    { "printer-resolution", "SetResolution" },
+    { "printer-resolution", "CNRes_PGP" },
+    { "print-color-mode",   "ColorModel" },
+    { "print-quality",      "cupsPrintQuality" }
+};
+
+/*
+ * Return the index of the mapping row for a PPD keyword, or -1.
+ */
+static int
+ppd_mapping_row_for_keyword(const char *keyword)
+{
+    for (size_t i = 0; i < G_N_ELEMENTS(ipp_ppd_options); i++)
+        if (strcmp(ipp_ppd_options[i].ppd_keyword, keyword) == 0)
+            return (int)i;
+
+    return -1;
+}
+
+/*
+ * The PPD option that CUPS uses for an IPP attribute, if the queue has
+ * one. Rows of the same IPP name are kept in cupsd's lookup order, so
+ * the first match is the one that cupsd itself would use.
+ */
+static ppd_option_t *
+ppd_option_for_ipp(ppd_file_t *ppd,
+                   const char *ipp_name)
+{
+    if (!ppd || !ipp_name)
+        return NULL;
+
+    for (size_t i = 0; i < G_N_ELEMENTS(ipp_ppd_options); i++)
+    {
+        if (strcmp(ipp_ppd_options[i].ipp_name, ipp_name) != 0)
+            continue;
+
+        ppd_option_t *po = ppdFindOption(ppd,
+                                         ipp_ppd_options[i].ppd_keyword);
+        if (po)
+            return po;
+    }
+
+    return NULL;
+}
+
+/*
+ * Turn a PPD keyword into the lowercase IPP keyword that cupsd uses.
+ * This follows pwg_unppdize_name() from CUPS (cups/ppd-cache.c), which
+ * is what generated the supported values the frontend sees.
+ */
+static char *
+unppdize_name(const char *ppd,
+              const char *dashchars)
+{
+    /*
+     * An already lowercase name without characters that need a dash is
+     * used as-is, exactly like pwg_unppdize_name() in CUPS.
+     */
+    if (g_ascii_islower(*ppd))
+    {
+        const char *p;
+
+        for (p = ppd + 1; *p; p++)
+            if (g_ascii_isupper(*p) || strchr(dashchars, *p) ||
+                (*p == '-' && p[-1] == '-') ||
+                (*p == '-' && p[1] == '\0'))
+                break;
+
+        if (!*p)
+            return g_strdup(ppd);
+    }
+
+    char *name = g_malloc(2 * strlen(ppd) + 1);
+    char *ptr = name;
+    gboolean nodash = TRUE;
+
+    for (; *ppd; ppd++)
+    {
+        if (g_ascii_isalnum(*ppd))
+        {
+            *ptr++ = g_ascii_tolower(*ppd);
+            nodash = FALSE;
+        }
+        else if (*ppd == '-' || strchr(dashchars, *ppd))
+        {
+            if (!nodash)
+            {
+                *ptr++ = '-';
+                nodash = TRUE;
+            }
+        }
+        else
+        {
+            *ptr++ = *ppd;
+            nodash = FALSE;
+        }
+
+        if (!nodash)
+        {
+            if (!g_ascii_isupper(*ppd) && g_ascii_isalnum(*ppd) &&
+                g_ascii_isupper(ppd[1]))
+            {
+                *ptr++ = '-';
+                nodash = TRUE;
+            }
+            else if (!g_ascii_isdigit(*ppd) && g_ascii_isdigit(ppd[1]))
+            {
+                *ptr++ = '-';
+                nodash = TRUE;
+            }
+        }
+    }
+
+    while (ptr > name && ptr[-1] == '-')
+        ptr--;
+    *ptr = '\0';
+
+    return name;
+}
+
+/*
+ * Map a PPD InputSlot choice to the PWG media-source keyword that cupsd
+ * derives from it (cups/ppd-cache.c, _ppdCacheCreateWithPPD).
+ */
+static char *
+ipp_media_source_from_ppd(const char *choice)
+{
+    if (!g_ascii_strncasecmp(choice, "Auto", 4) ||
+        !g_ascii_strcasecmp(choice, "Default"))
+        return g_strdup("auto");
+    if (!g_ascii_strcasecmp(choice, "Cassette"))
+        return g_strdup("main");
+    if (!g_ascii_strcasecmp(choice, "PhotoTray"))
+        return g_strdup("photo");
+    if (!g_ascii_strcasecmp(choice, "CDTray"))
+        return g_strdup("disc");
+    if (!g_ascii_strncasecmp(choice, "Multipurpose", 12) ||
+        !g_ascii_strcasecmp(choice, "MP") ||
+        !g_ascii_strcasecmp(choice, "MPTray"))
+        return g_strdup("by-pass-tray");
+    if (!g_ascii_strcasecmp(choice, "LargeCapacity"))
+        return g_strdup("large-capacity");
+    if (!g_ascii_strncasecmp(choice, "Lower", 5))
+        return g_strdup("bottom");
+    if (!g_ascii_strncasecmp(choice, "Middle", 6))
+        return g_strdup("middle");
+    if (!g_ascii_strncasecmp(choice, "Upper", 5))
+        return g_strdup("top");
+    if (!g_ascii_strncasecmp(choice, "Side", 4))
+        return g_strdup("side");
+    if (!g_ascii_strcasecmp(choice, "Roll"))
+        return g_strdup("main-roll");
+
+    return unppdize_name(choice, "_");
+}
+
+/*
+ * Does a PPD choice match one of the standard media types of CUPS?
+ */
+static gboolean
+ppd_choice_matches_media_type(const char *choice,
+                              const char *ppd_name,
+                              int match_length)
+{
+    if (match_length <= 0)
+        return !g_ascii_strcasecmp(choice, ppd_name);
+
+    return !g_ascii_strncasecmp(choice, ppd_name, match_length);
+}
+
+/*
+ * Map a PPD MediaType choice to the PWG media-type keyword that cupsd
+ * derives from it (cups/ppd-cache.c, _ppdCacheCreateWithPPD).
+ */
+static char *
+ipp_media_type_from_ppd(ppd_option_t *po,
+                        const char *choice)
+{
+    static const struct
+    {
+        const char *ppd_name;
+        int match_length;
+        const char *pwg_name;
+    } standard_types[] =
+    {
+        { "Auto",        4, "auto" },
+        { "Any",        -1, "auto" },
+        { "Default",    -1, "auto" },
+        { "Card",        4, "cardstock" },
+        { "Env",         3, "envelope" },
+        { "Gloss",       5, "photographic-glossy" },
+        { "HighGloss",  -1, "photographic-high-gloss" },
+        { "Matte",      -1, "photographic-matte" },
+        { "Plain",       5, "stationery" },
+        { "Coated",      6, "stationery-coated" },
+        { "Inkjet",     -1, "stationery-inkjet" },
+        { "Letterhead", -1, "stationery-letterhead" },
+        { "Preprint",    8, "stationery-preprinted" },
+        { "Recycled",   -1, "stationery-recycled" },
+        { "Transparen", 10, "transparency" }
+    };
+    int match = -1;
+
+    for (size_t j = 0; j < G_N_ELEMENTS(standard_types); j++)
+        if (ppd_choice_matches_media_type(choice, standard_types[j].ppd_name,
+                                          standard_types[j].match_length))
+            match = (int)j;
+
+    if (match < 0)
+        return unppdize_name(choice, "_");
+
+    /*
+     * CUPS drops the standard name when more than one choice of the
+     * option maps to it, and treats the three names that map to "auto"
+     * as one group.
+     */
+    int matches = 0;
+    for (int i = 0; i < po->num_choices; i++)
+    {
+        const char *c = po->choices[i].choice;
+
+        if (match < 3)
+        {
+            if (ppd_choice_matches_media_type(c, standard_types[0].ppd_name,
+                                              standard_types[0].match_length) ||
+                ppd_choice_matches_media_type(c, standard_types[1].ppd_name,
+                                              standard_types[1].match_length) ||
+                ppd_choice_matches_media_type(c, standard_types[2].ppd_name,
+                                              standard_types[2].match_length))
+                matches++;
+        }
+        else if (ppd_choice_matches_media_type(c,
+                                               standard_types[match].ppd_name,
+                                               standard_types[match].match_length))
+            matches++;
+    }
+
+    if (matches > 1)
+        return unppdize_name(choice, "_");
+
+    return g_strdup(standard_types[match].pwg_name);
+}
+
+/*
+ * Map a PPD resolution choice to the IPP resolution keyword ("600dpi",
+ * "600x1200dpi"). cupsd parses the same way in scheduler/printers.c.
+ */
+static char *
+ipp_resolution_from_ppd(const char *choice)
+{
+    char *end;
+    long x = strtol(choice, &end, 10);
+    long y;
+
+    if (end == choice || x <= 0)
+        return NULL;
+
+    if (*end == 'x')
+    {
+        char *end2;
+        y = strtol(end + 1, &end2, 10);
+        if (end2 == end + 1 || y <= 0)
+            return NULL;
+    }
+    else
+        y = x;
+
+    char buf[64];
+    if (x == y)
+        g_snprintf(buf, sizeof(buf), "%lddpi", x);
+    else
+        g_snprintf(buf, sizeof(buf), "%ldx%lddpi", x, y);
+
+    return g_strdup(buf);
+}
+
+/*
+ * Classify a PPD ColorModel choice as monochrome or color. Drivers use
+ * many names (Gray, Grayscale, RGB, CMYK, ...), so match the words.
+ */
+static char *
+ipp_color_mode_from_ppd(const char *choice)
+{
+    char *lower = g_ascii_strdown(choice, -1);
+    char *result = NULL;
+
+    if (strstr(lower, "mono") || strstr(lower, "gray") ||
+        strstr(lower, "grey") || strstr(lower, "black"))
+        result = g_strdup("monochrome");
+    else if (strstr(lower, "color") || strstr(lower, "colour") ||
+             strstr(lower, "rgb") || strstr(lower, "cmyk") ||
+             strstr(lower, "cmy"))
+        result = g_strdup("color");
+
+    g_free(lower);
+    return result;
+}
+
+/*
+ * Map a PPD cupsPrintQuality choice to the IPP enum value.
+ */
+static char *
+ipp_quality_from_ppd(const char *choice)
+{
+    if (!g_ascii_strcasecmp(choice, "draft"))
+        return g_strdup("3");
+    if (!g_ascii_strcasecmp(choice, "normal"))
+        return g_strdup("4");
+    if (!g_ascii_strcasecmp(choice, "high"))
+        return g_strdup("5");
+    if (choice[0] && strspn(choice, "0123456789") == strlen(choice))
+        return g_strdup(choice);
+
+    return NULL;
+}
+
+/*
+ * Map a PPD duplex choice to the IPP sides keyword.
+ */
+static char *
+ipp_sides_from_ppd(const char *choice)
+{
+    if (!g_ascii_strcasecmp(choice, "None") ||
+        !g_ascii_strcasecmp(choice, "Simplex"))
+        return g_strdup("one-sided");
+    if (!g_ascii_strcasecmp(choice, "DuplexNoTumble"))
+        return g_strdup("two-sided-long-edge");
+    if (!g_ascii_strcasecmp(choice, "DuplexTumble"))
+        return g_strdup("two-sided-short-edge");
+
+    return NULL;
+}
+
+/*
+ * Map a PPD choice of a mapped option to its IPP value, or NULL when
+ * the choice only exists in the PPD.
+ */
+static char *
+ipp_value_from_ppd_choice(const char *ipp_name,
+                          ppd_option_t *po,
+                          const char *choice)
+{
+    if (strcmp(ipp_name, "media-source") == 0)
+        return ipp_media_source_from_ppd(choice);
+    if (strcmp(ipp_name, "media-type") == 0)
+        return ipp_media_type_from_ppd(po, choice);
+    if (strcmp(ipp_name, "output-bin") == 0)
+        return unppdize_name(choice, "_");
+    if (strcmp(ipp_name, "sides") == 0)
+        return ipp_sides_from_ppd(choice);
+    if (strcmp(ipp_name, "printer-resolution") == 0)
+        return ipp_resolution_from_ppd(choice);
+    if (strcmp(ipp_name, "print-color-mode") == 0)
+        return ipp_color_mode_from_ppd(choice);
+    if (strcmp(ipp_name, "print-quality") == 0)
+        return ipp_quality_from_ppd(choice);
+
+    return NULL;
+}
+
+/*
+ * Find the PPD choice that corresponds to an IPP value. Values that
+ * are not mapped (PPD-only choices) are matched by their literal name.
+ */
+static ppd_choice_t *
+ppd_choice_for_ipp(const char *ipp_name,
+                   ppd_option_t *po,
+                   const char *ipp_value)
+{
+    for (int i = 0; i < po->num_choices; i++)
+    {
+        char *mapped = ipp_value_from_ppd_choice(ipp_name, po,
+                                                 po->choices[i].choice);
+        gboolean equal = mapped && !g_ascii_strcasecmp(mapped, ipp_value);
+        g_free(mapped);
+
+        if (equal)
+            return &po->choices[i];
+    }
+
+    for (int i = 0; i < po->num_choices; i++)
+        if (!g_ascii_strcasecmp(po->choices[i].choice, ipp_value))
+            return &po->choices[i];
+
+    return NULL;
+}
+
+/*
+ * TRUE when the value is already in the list (case-insensitive).
+ */
+static gboolean
+value_in_list(char **values,
+              int count,
+              const char *value)
+{
+    for (int i = 0; i < count; i++)
+        if (values[i] && !g_ascii_strcasecmp(values[i], value))
+            return TRUE;
+
+    return FALSE;
+}
+
+/*
+ * Merge a PPD option into the IPP option that represents the same
+ * concept. The choice set of the PPD comes first (it is what the
+ * printer actually offers), with the IPP name for every choice that
+ * exists in both and the PPD name for the PPD-only choices. IPP-only
+ * choices are kept as well, so that the dialog does not lose values the
+ * printer accepts.
+ */
+static void
+merge_ppd_option(Option *opt,
+                 ppd_option_t *po,
+                 const char *ipp_name)
+{
+    int capacity = po->num_choices + opt->num_supported + 1;
+    char **values = g_new0(char *, capacity);
+    int count = 0;
+
+    for (int i = 0; i < po->num_choices; i++)
+    {
+        const char *choice = po->choices[i].choice;
+        char *mapped = ipp_value_from_ppd_choice(ipp_name, po, choice);
+        const char *value = mapped ? mapped : choice;
+
+        if (!value_in_list(values, count, value))
+            values[count++] = g_strdup(value);
+
+        g_free(mapped);
+    }
+
+    for (int i = 0; i < opt->num_supported; i++)
+        if (!value_in_list(values, count, opt->supported_values[i]))
+            values[count++] = g_strdup(opt->supported_values[i]);
+
+    for (int i = 0; i < opt->num_supported; i++)
+        g_free(opt->supported_values[i]);
+    g_free(opt->supported_values);
+    opt->supported_values = values;
+    opt->num_supported = count;
+
+    /*
+     * The PPD default is the default of the printer; some IPP options
+     * do not even have a default attribute.
+     */
+    char *ppd_default = ipp_value_from_ppd_choice(ipp_name, po,
+                                                  po->defchoice);
+    const char *default_value = ppd_default;
+
+    if (!default_value && value_in_list(values, count, po->defchoice))
+        default_value = po->defchoice;
+
+    if (default_value && value_in_list(values, count, default_value))
+    {
+        g_free(opt->default_value);
+        opt->default_value = g_strdup(default_value);
+    }
+    else if (!opt->default_value ||
+             !value_in_list(values, count, opt->default_value))
+    {
+        g_free(opt->default_value);
+        opt->default_value = count ? g_strdup(values[0]) : g_strdup("");
+    }
+
+    g_free(ppd_default);
 }
 
 /*
  * Append the collected PPD (vendor) options to the option array.
  *
+ * A PPD option that represents the same concept as an IPP option of the
+ * queue is merged into that IPP option instead of being added a second
+ * time. Vendor-only options are added as PPD keywords.
+ *
  * Returns the updated optsIndex.
  */
 static int
-add_ppd_options (Option             *opts,
-                 int                 optsIndex,
-                 const ppd_option_add_t *ppd_opts,
-                 int                 ppd_count)
+add_ppd_options(PrinterCUPS *p,
+                Option *opts,
+                int optsIndex,
+                const ppd_option_add_t *ppd_opts,
+                int ppd_count)
 {
+    ppd_file_t *ppd = ensure_ppd(p);
+    int *rows = g_new(int, ppd_count > 0 ? ppd_count : 1);
+
+    for (int i = 0; i < ppd_count; i++)
+        rows[i] = ppd_mapping_row_for_keyword(ppd_opts[i].keyword);
+
     for (int i = 0; i < ppd_count; i++)
     {
-        opts[optsIndex].option_name = g_strdup (ppd_opts[i].keyword);
-        opts[optsIndex].default_value = g_strdup (ppd_opts[i].defchoice);
+        const char *ipp_name = NULL;
+        ppd_option_t *po = NULL;
+
+        if (rows[i] >= 0)
+        {
+            ipp_name = ipp_ppd_options[rows[i]].ipp_name;
+
+            /*
+             * Only the keyword that cupsd itself prefers is shown; an
+             * alias such as JCLDuplex does not become a second entry.
+             */
+            gboolean preferred = TRUE;
+            for (int k = 0; k < ppd_count; k++)
+            {
+                if (rows[k] < 0 || rows[k] >= rows[i])
+                    continue;
+                if (strcmp(ipp_ppd_options[rows[k]].ipp_name, ipp_name) == 0)
+                {
+                    preferred = FALSE;
+                    break;
+                }
+            }
+            if (!preferred)
+                continue;
+
+            po = ppd ? ppdFindOption(ppd, ppd_opts[i].keyword) : NULL;
+        }
+
+        Option *merged = NULL;
+        if (ipp_name)
+        {
+            for (int k = 0; k < optsIndex; k++)
+            {
+                if (strcmp(opts[k].option_name, ipp_name) == 0)
+                {
+                    merged = &opts[k];
+                    break;
+                }
+            }
+        }
+
+        if (merged && po)
+        {
+            merge_ppd_option(merged, po, ipp_name);
+            continue;
+        }
+
+        opts[optsIndex].option_name = g_strdup(ppd_opts[i].keyword);
+        opts[optsIndex].default_value = g_strdup(ppd_opts[i].defchoice);
         opts[optsIndex].num_supported = ppd_opts[i].num_choices;
         opts[optsIndex].supported_values =
-            cpdbNewCStringArray (opts[optsIndex].num_supported);
+            cpdbNewCStringArray(opts[optsIndex].num_supported);
         for (int j = 0; j < opts[optsIndex].num_supported; j++)
             opts[optsIndex].supported_values[j] =
-                g_strdup (ppd_opts[i].choices[j]);
+                g_strdup(ppd_opts[i].choices[j]);
 
         /*
          * A PPD option without a default choice gets the first supported
@@ -1171,16 +1723,18 @@ add_ppd_options (Option             *opts,
          */
         if (opts[optsIndex].default_value[0] == '\0')
         {
-            g_free (opts[optsIndex].default_value);
+            g_free(opts[optsIndex].default_value);
             opts[optsIndex].default_value =
-                g_strdup (opts[optsIndex].supported_values[0]);
+                g_strdup(opts[optsIndex].supported_values[0]);
         }
 
         optsIndex++;
     }
 
+    g_free(rows);
     return optsIndex;
 }
+
 #endif /* CUPS_VERSION_MAJOR < 3 */
 
 int get_all_options(PrinterCUPS *p, Option **options)
@@ -1210,9 +1764,8 @@ int get_all_options(PrinterCUPS *p, Option **options)
 
 #if CUPS_VERSION_MAJOR < 3
     /* Collect the vendor PPD options of the queue. */
-    ppd_option_add_t *ppd_opts = NULL;
     int ppd_count = 0;
-    ppd_opts = collect_ppd_options (p, &ppd_count);
+    ppd_option_add_t *ppd_opts = collect_ppd_options(p, &ppd_count);
 #else
     int ppd_count = 0;
 #endif
@@ -1285,10 +1838,11 @@ int get_all_options(PrinterCUPS *p, Option **options)
     }
 
 #if CUPS_VERSION_MAJOR < 3
-    /* Expose vendor PPD options not already covered by IPP /
-     * destination-info (driver-based / non-IPP queues). */
-    optsIndex = add_ppd_options (opts, optsIndex, ppd_opts, ppd_count);
-    free_ppd_options (ppd_opts, ppd_count);
+    /* Expose vendor PPD options not already covered by an IPP
+     * attribute or destination info (driver-based / non-IPP queues).
+     * PPD options that duplicate an IPP attribute are merged into it. */
+    optsIndex = add_ppd_options(p, opts, optsIndex, ppd_opts, ppd_count);
+    free_ppd_options(ppd_opts, ppd_count);
 #endif /* CUPS_VERSION_MAJOR < 3 */
 
     /* Add the booklet option */
@@ -3112,10 +3666,10 @@ char *get_option_translation(PrinterCUPS *p,
      * text from the (cached) PPD without any IPP round trips. The PPD
      * keyword is not known to the IPP translation catalogs. */
     {
-        ppd_file_t *ppd = ensure_ppd (p);
-        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
+        ppd_file_t *ppd = ensure_ppd(p);
+        ppd_option_t *po = ppd ? ppdFindOption(ppd, option_name) : NULL;
         if (po && po->text[0])
-            return g_strdup (po->text);
+            return g_strdup(po->text);
     }
 #endif
 
@@ -3148,6 +3702,21 @@ char *get_option_translation(PrinterCUPS *p,
     translation = cfCatalogLookUpOption((char *)option_name, 
                                         opts_catalog, printer_opts_catalog);
     copy = g_strdup(translation);
+
+#if CUPS_VERSION_MAJOR < 3
+    /*
+     * A merged option has an IPP name; when the IPP catalogs have no
+     * translation for it, fall back to the text of the PPD option that
+     * represents the same concept.
+     */
+    if (!copy)
+    {
+        ppd_option_t *po = ppd_option_for_ipp(ensure_ppd(p), option_name);
+        if (po && po->text[0])
+            copy = g_strdup(po->text);
+    }
+#endif
+
     cupsArrayDelete(opts_catalog);
     cupsArrayDelete(printer_opts_catalog);
     ippDelete(response);
@@ -3172,11 +3741,11 @@ char *get_choice_translation(PrinterCUPS *p,
     /* Vendor PPD options on driver-based queues: serve the localized
      * text from the (cached) PPD without any IPP round trips. */
     {
-        ppd_file_t *ppd = ensure_ppd (p);
-        ppd_option_t *po = ppd ? ppdFindOption (ppd, option_name) : NULL;
-        ppd_choice_t *pc = po ? ppdFindChoice (po, choice_name) : NULL;
+        ppd_file_t *ppd = ensure_ppd(p);
+        ppd_option_t *po = ppd ? ppdFindOption(ppd, option_name) : NULL;
+        ppd_choice_t *pc = po ? ppdFindChoice(po, choice_name) : NULL;
         if (pc && pc->text[0])
-            return g_strdup (pc->text);
+            return g_strdup(pc->text);
     }
 #endif
 
@@ -3209,6 +3778,23 @@ char *get_choice_translation(PrinterCUPS *p,
     translation = cfCatalogLookUpChoice((char *)choice_name, (char *)option_name,
                                         opts_catalog, printer_opts_catalog);
     copy = g_strdup(translation);
+
+#if CUPS_VERSION_MAJOR < 3
+    /*
+     * A merged option has an IPP name and IPP choice names; when the
+     * IPP catalogs have no translation for a choice, fall back to the
+     * text of the corresponding PPD choice.
+     */
+    if (!copy)
+    {
+        ppd_option_t *po = ppd_option_for_ipp(ensure_ppd(p), option_name);
+        ppd_choice_t *pc = po ? ppd_choice_for_ipp(option_name, po,
+                                                   choice_name) : NULL;
+        if (pc && pc->text[0])
+            copy = g_strdup(pc->text);
+    }
+#endif
+
     cupsArrayDelete(opts_catalog);
     cupsArrayDelete(printer_opts_catalog);
     ippDelete(response);
