@@ -7,7 +7,9 @@
 #include <string.h>
 
 #include <cups/cups.h>
+#if CUPS_VERSION_MAJOR < 3
 #include <cups/ppd.h>
+#endif
 #include <cupsfilters/catalog.h>
 
 #include "cups-compat.h"
@@ -45,6 +47,10 @@ typedef struct _PrinterCUPS
     cups_dest_t *dest;
     cups_dinfo_t *dinfo;
     char *stream_socket_path;
+#if CUPS_VERSION_MAJOR < 3
+    ppd_file_t *ppd;    /* cached, localized PPD (transitional, CUPS 2.x only) */
+    gboolean ppd_tried; /* TRUE once the PPD has been fetched */
+#endif
 } PrinterCUPS;
 
 /**
@@ -304,7 +310,7 @@ int add_media_to_options(PrinterCUPS *p, Media *medias, int media_count, Option 
 int get_all_capabilities(PrinterCUPS *p, Capability **caps,
                          const char *locale);
 
-int settings_to_cups_options(GVariant *settings, int num_settings,
+int settings_to_cups_options(PrinterCUPS *p, GVariant *settings, int num_settings,
                              cups_option_t **options);
 
 void print_socket(PrinterCUPS *p, int num_settings, GVariant *settings,

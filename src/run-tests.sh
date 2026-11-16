@@ -657,6 +657,22 @@ echo ""
 ) | $FRONTEND > $FRONTEND_LOG 2>&1 &
 FRONTEND_PID=$!
 
+#
+# Check the vendor PPD options of the queue.  This has to happen while
+# the frontend is still connected, the backend stops as soon as the last
+# frontend disconnects.
+#
+
+sleep 2
+
+echo "Checking the vendor PPD options:"
+if ! ./test_ppd_options $QUEUE en; then
+    echo "FAIL: Vendor PPD options not correct!"
+    exit 1
+fi
+
+echo
+
 if (test "x$FRONTEND_PID" != "x"); then
     echo "CPDB frontend is PID $FRONTEND_PID."
     echo ""
