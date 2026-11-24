@@ -3355,7 +3355,7 @@ void cups_get_Resolution(cups_dest_t *dest, int *xres, int *yres)
     *xres = ippGetResolution(attr, 0, yres, &units);
 }
 
-int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
+cpdb_dest_cb_ret_t add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
 {
     GHashTable *h = (GHashTable *)user_data;
     char *printername = get_printer_name_for_cups_dest(dest);
@@ -3365,7 +3365,7 @@ int add_printer_to_ht(void *user_data, unsigned flags, cups_dest_t *dest)
 
     return 1;
 }
-int add_printer_to_ht_no_temp(void *user_data, unsigned flags, cups_dest_t *dest)
+cpdb_dest_cb_ret_t add_printer_to_ht_no_temp(void *user_data, unsigned flags, cups_dest_t *dest)
 {
     if (cups_is_temporary(dest))
         return 1;
@@ -3377,7 +3377,7 @@ int add_printer_to_ht_no_temp(void *user_data, unsigned flags, cups_dest_t *dest
     return 1;
 }
 
-int add_printer_to_ht_no_remote(void *user_data, unsigned flags, cups_dest_t *dest)
+cpdb_dest_cb_ret_t add_printer_to_ht_no_remote(void *user_data, unsigned flags, cups_dest_t *dest)
 {
     if (cups_is_remote(dest))
         return 1;
