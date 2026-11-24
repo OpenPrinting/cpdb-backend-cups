@@ -63,11 +63,16 @@ static inline const char *cpdb_httpDateString(time_t t)
 /* http timeout callbacks return bool in libcups3, int in libcups2. */
 typedef bool cpdb_http_timeout_ret_t;
 
+/* cups_dest_cb_t callbacks return bool in libcups3, int in libcups2. */
+typedef bool cpdb_dest_cb_ret_t;
+
 #else /* CUPS 2.x */
 
 #  define cpdb_httpDateString(t)  httpGetDateString(t)
 
 typedef int cpdb_http_timeout_ret_t;
+
+typedef int cpdb_dest_cb_ret_t;
 
 #endif /* CUPS_VERSION_MAJOR >= 3 */
 

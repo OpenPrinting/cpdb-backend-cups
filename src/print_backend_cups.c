@@ -21,7 +21,7 @@ on_name_acquired(GDBusConnection *connection,
                  gpointer not_used);
 static void acquire_session_bus_name(char *bus_name);
 gpointer list_printers(gpointer _dialog_name);
-int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest);
+cpdb_dest_cb_ret_t send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest);
 void connect_to_signals();
 
 BackendObj *b;
@@ -384,7 +384,7 @@ gpointer list_printers(gpointer _dialog_name)
     return NULL;
 }
 
-int send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
+cpdb_dest_cb_ret_t send_printer_added(void *_dialog_name, unsigned flags, cups_dest_t *dest)
 {
 
     const char *dialog_name = (const char *)_dialog_name;
