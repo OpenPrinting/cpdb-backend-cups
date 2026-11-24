@@ -134,6 +134,11 @@ int main()
     (void)ippPort();
 
     b = get_new_BackendObj();
+    if (b == NULL)
+    {
+        logerror("Error creating the CUPS backend object.\n");
+        return 1;
+    }
     cpdbInit();
     acquire_session_bus_name(BUS_NAME);
 

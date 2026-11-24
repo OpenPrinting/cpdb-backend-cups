@@ -38,8 +38,12 @@ char *get_printer_name_for_cups_dest(const cups_dest_t *dest)
 BackendObj *get_new_BackendObj()
 {
     map = get_new_Mappings();
+    if (map == NULL)
+        return NULL;
 
     BackendObj *b = (BackendObj *)(malloc(sizeof(BackendObj)));
+    if (b == NULL)
+        return NULL;
     b->dbus_connection = NULL;
     b->dialogs = g_hash_table_new_full(g_str_hash, g_str_equal,
                                        (GDestroyNotify)free_string,
@@ -403,6 +407,11 @@ PrinterCUPS *add_printer_to_dialog(BackendObj *b, const char *dialog_name, const
     }
 
     PrinterCUPS *p = get_new_PrinterCUPS(dest);
+    if (p == NULL)
+    {
+        g_free(printer_name);
+        return NULL;
+    }
     g_hash_table_insert(d->printers, printer_name, p);
     return p;
 }
@@ -595,6 +604,11 @@ cups_dest_t *get_dest_by_name(BackendObj *b, const char *dialog_name, const char
 PrinterCUPS *get_new_PrinterCUPS(const cups_dest_t *dest)
 {
     PrinterCUPS *p = (PrinterCUPS *)(malloc(sizeof(PrinterCUPS)));
+    if (p == NULL)
+    {
+        logerror("Error creating PrinterCUPS");
+        return NULL;
+    }
 
     /** Make a copy of dest, because there are no guarantees 
      * whether dest will always exist or if it will be freed**/
@@ -676,6 +690,11 @@ int get_supported(PrinterCUPS *p, char ***supported_values, const char *option_n
     }
 
     values = malloc(sizeof(char *) * count);
+    if (values == NULL)
+    {
+        *supported_values = NULL;
+        return 0;
+    }
 
     for (i = 0; i < count; i++)
     {
@@ -757,6 +776,8 @@ char *get_default(PrinterCUPS *p, char *option_name)
 Option *get_NA_option()
 {
     Option *o = (Option *)malloc(sizeof(Option));
+    if (o == NULL)
+        return NULL;
     o->option_name = "NA";
     o->default_value = "NA";
     o->num_supported = 0;
@@ -793,6 +814,11 @@ void free_options(int count, Option *opts)
 void unpack_option_array(GVariant *var, int num_options, Option **options)
 {
     Option *opt = (Option *)(malloc(sizeof(Option) * num_options));
+    if (opt == NULL)
+    {
+        *options = NULL;
+        return;
+    }
     int i, j;
     char *str;
     GVariantIter *iter;
@@ -2274,6 +2300,7 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
     if (!tmp_names) {
         for (int k = 0; k < num_options; k++) g_free(option_names[k]);
         free(option_names);
+        *caps = NULL;
         return 0;
     }
     option_names = tmp_names;
@@ -2282,6 +2309,12 @@ int get_all_capabilities(PrinterCUPS *p, Capability **caps,
     num_options += sz;
 
     Capability *raw = (Capability *)malloc(sizeof(Capability) * (num_options + 20));
+    if (!raw) {
+        for (int k = 0; k < num_options; k++) g_free(option_names[k]);
+        free(option_names);
+        *caps = NULL;
+        return 0;
+    }
     int rawIndex = 0;
     ipp_attribute_t *vals;
 
@@ -3278,6 +3311,8 @@ void free_Dialog(Dialog *d)
 Mappings *get_new_Mappings()
 {
     Mappings *m = (Mappings *)(malloc(sizeof(Mappings)));
+    if (m == NULL)
+        return NULL;
     m->state[3] = CPDB_STATE_IDLE;
     m->state[4] = CPDB_STATE_PRINTING;
     m->state[5] = CPDB_STATE_STOPPED;
@@ -3624,6 +3659,8 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
     case IPP_TAG_INTEGER:
         #define TAG_INTEGER_LEN 50
         str = (char *)(malloc(sizeof(char) * TAG_INTEGER_LEN));
+        if (str == NULL)
+            return NULL;
         snprintf(str, TAG_INTEGER_LEN, "%d", ippGetInteger(attr, index));
         break;
 
@@ -3638,6 +3675,8 @@ char *extract_ipp_attribute(ipp_attribute_t *attr, int index, const char *option
     case IPP_TAG_RANGE:
         #define TAG_RANGE_LEN 100
         str = (char *)(malloc(sizeof(char) * TAG_RANGE_LEN));
+        if (str == NULL)
+            return NULL;
         int upper, lower = ippGetRange(attr, index, &upper);
         snprintf(str, TAG_RANGE_LEN, "%d-%d", lower, upper);
         break;
